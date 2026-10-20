@@ -23,8 +23,8 @@ func TestParseConfig(t *testing.T) {
 	t.Run("environment", func(t *testing.T) {
 		t.Parallel()
 		cfg, err := parseConfig(nil, env(map[string]string{
-			"NKIT_SERVER": "wss://chat.example/ws",
-			"NKIT_NICK":   "alice",
+			"LENTITUD_SERVER": "wss://chat.example/ws",
+			"LENTITUD_NICK":   "alice",
 		}))
 		if err != nil {
 			t.Fatalf("parseConfig() error = %v", err)
@@ -38,7 +38,7 @@ func TestParseConfig(t *testing.T) {
 		t.Parallel()
 		cfg, err := parseConfig(
 			[]string{"-server", "ws://localhost:9000/ws", "-nick", "bob", "-insecure"},
-			env(map[string]string{"NKIT_SERVER": "ws://env.example/ws", "NKIT_NICK": "alice"}),
+			env(map[string]string{"LENTITUD_SERVER": "ws://env.example/ws", "LENTITUD_NICK": "alice"}),
 		)
 		if err != nil {
 			t.Fatalf("parseConfig() error = %v", err)

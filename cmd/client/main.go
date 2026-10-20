@@ -35,10 +35,10 @@ func main() {
 func parseConfig(args []string, getenv func(string) string) (client.Config, error) {
 	cfg := client.DefaultConfig()
 
-	if v := getenv("NKIT_SERVER"); v != "" {
+	if v := getenv("LENTITUD_SERVER"); v != "" {
 		cfg.ServerURL = v
 	}
-	if v := getenv("NKIT_NICK"); v != "" {
+	if v := getenv("LENTITUD_NICK"); v != "" {
 		cfg.Nick = v
 	}
 
@@ -51,7 +51,7 @@ func parseConfig(args []string, getenv func(string) string) (client.Config, erro
 		return cfg, err
 	}
 	if cfg.Nick == "" {
-		return cfg, errors.New("a nickname is required: use -nick or NKIT_NICK")
+		return cfg, errors.New("a nickname is required: use -nick or LENTITUD_NICK")
 	}
 	return cfg, nil
 }

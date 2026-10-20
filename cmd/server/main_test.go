@@ -90,17 +90,21 @@ func TestParseConfig(t *testing.T) {
 	t.Run("environment", func(t *testing.T) {
 		t.Parallel()
 		cfg, level, err := parseConfig(nil, env(map[string]string{
-			"NKIT_ADDR":            ":9000",
-			"NKIT_TLS_CERT":        "cert.pem",
-			"NKIT_TLS_KEY":         "key.pem",
-			"NKIT_ALLOWED_ORIGINS": "http://a.example, http://b.example",
-			"NKIT_LOG_LEVEL":       "debug",
+			"LENTITUD_ADDR":            ":9000",
+			"LENTITUD_TLS_CERT":        "cert.pem",
+			"LENTITUD_TLS_KEY":         "key.pem",
+			"LENTITUD_WEBHOOK_SECRET":  "s3cret",
+			"LENTITUD_ALLOWED_ORIGINS": "http://a.example, http://b.example",
+			"LENTITUD_LOG_LEVEL":       "debug",
 		}))
 		if err != nil {
 			t.Fatalf("parseConfig() error = %v", err)
 		}
 		if cfg.Addr != ":9000" || cfg.TLSCert != "cert.pem" || cfg.TLSKey != "key.pem" {
 			t.Fatalf("environment not applied: %#v", cfg)
+		}
+		if cfg.WebhookSecret != "s3cret" {
+			t.Fatalf("WebhookSecret = %q, want s3cret", cfg.WebhookSecret)
 		}
 		if want := []string{"http://a.example", "http://b.example"}; !slices.Equal(cfg.AllowedOrigins, want) {
 			t.Fatalf("AllowedOrigins = %#v, want %#v", cfg.AllowedOrigins, want)
@@ -113,14 +117,17 @@ func TestParseConfig(t *testing.T) {
 	t.Run("flags override environment", func(t *testing.T) {
 		t.Parallel()
 		cfg, _, err := parseConfig(
-			[]string{"-addr", ":7000", "-allowed-origins", "http://flag.example", "-log-level", "warn"},
-			env(map[string]string{"NKIT_ADDR": ":9000", "NKIT_LOG_LEVEL": "debug", "NKIT_ALLOWED_ORIGINS": "http://env.example"}),
+			[]string{"-addr", ":7000", "-allowed-origins", "http://flag.example", "-log-level", "warn", "-webhook-secret", "flag-secret"},
+			env(map[string]string{"LENTITUD_ADDR": ":9000", "LENTITUD_LOG_LEVEL": "debug", "LENTITUD_ALLOWED_ORIGINS": "http://env.example", "LENTITUD_WEBHOOK_SECRET": "env-secret"}),
 		)
 		if err != nil {
 			t.Fatalf("parseConfig() error = %v", err)
 		}
 		if cfg.Addr != ":7000" {
 			t.Fatalf("Addr = %q, want :7000", cfg.Addr)
+		}
+		if cfg.WebhookSecret != "flag-secret" {
+			t.Fatalf("WebhookSecret = %q, want flag-secret", cfg.WebhookSecret)
 		}
 		if want := []string{"http://flag.example"}; !slices.Equal(cfg.AllowedOrigins, want) {
 			t.Fatalf("AllowedOrigins = %#v, want %#v", cfg.AllowedOrigins, want)

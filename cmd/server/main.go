@@ -39,18 +39,21 @@ func main() {
 func parseConfig(args []string, getenv func(string) string) (server.Config, slog.Level, error) {
 	cfg := server.DefaultConfig()
 
-	if v := getenv("NKIT_ADDR"); v != "" {
+	if v := getenv("LENTITUD_ADDR"); v != "" {
 		cfg.Addr = v
 	}
-	if v := getenv("NKIT_TLS_CERT"); v != "" {
+	if v := getenv("LENTITUD_TLS_CERT"); v != "" {
 		cfg.TLSCert = v
 	}
-	if v := getenv("NKIT_TLS_KEY"); v != "" {
+	if v := getenv("LENTITUD_TLS_KEY"); v != "" {
 		cfg.TLSKey = v
 	}
+	if v := getenv("LENTITUD_WEBHOOK_SECRET"); v != "" {
+		cfg.WebhookSecret = v
+	}
 
-	originsDefault := getenv("NKIT_ALLOWED_ORIGINS")
-	logLevelDefault := getenv("NKIT_LOG_LEVEL")
+	originsDefault := getenv("LENTITUD_ALLOWED_ORIGINS")
+	logLevelDefault := getenv("LENTITUD_LOG_LEVEL")
 
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 	origins := fs.String("allowed-origins", originsDefault, "comma-separated list of additional allowed origins")
@@ -62,6 +65,7 @@ func parseConfig(args []string, getenv func(string) string) (server.Config, slog
 	rateLimit := fs.Int("rate-limit", cfg.RateLimitPerSecond, "maximum messages per second per client")
 	tlsCert := fs.String("tls-cert", cfg.TLSCert, "TLS certificate file")
 	tlsKey := fs.String("tls-key", cfg.TLSKey, "TLS private key file")
+	webhookSecret := fs.String("webhook-secret", cfg.WebhookSecret, "shared secret for POST /webhook; empty disables the endpoint")
 	logLevel := fs.String("log-level", logLevelDefault, "log level: debug, info, warn, error")
 
 	if err := fs.Parse(args); err != nil {
@@ -76,6 +80,7 @@ func parseConfig(args []string, getenv func(string) string) (server.Config, slog
 	cfg.RateLimitPerSecond = *rateLimit
 	cfg.TLSCert = *tlsCert
 	cfg.TLSKey = *tlsKey
+	cfg.WebhookSecret = *webhookSecret
 	cfg.AllowedOrigins = splitList(*origins)
 
 	return cfg, parseLevel(*logLevel), nil
