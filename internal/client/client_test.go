@@ -36,7 +36,7 @@ func TestValidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := New(tt.cfg)
+			c := New(&tt.cfg)
 			err := c.validate()
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("validate() error = %v, wantErr %v", err, tt.wantErr)
@@ -48,15 +48,15 @@ func TestValidate(t *testing.T) {
 func TestNewAppliesDefaults(t *testing.T) {
 	t.Parallel()
 
-	c := New(Config{})
-	if c.cfg.ConnectTimeout <= 0 {
-		t.Fatalf("ConnectTimeout = %v, want positive", c.cfg.ConnectTimeout)
+	c := New(&Config{})
+	if c.Config.ConnectTimeout <= 0 {
+		t.Fatalf("ConnectTimeout = %v, want positive", c.Config.ConnectTimeout)
 	}
-	if c.cfg.MinBackoff <= 0 {
-		t.Fatalf("MinBackoff = %v, want positive", c.cfg.MinBackoff)
+	if c.Config.MinBackoff <= 0 {
+		t.Fatalf("MinBackoff = %v, want positive", c.Config.MinBackoff)
 	}
-	if c.cfg.MaxBackoff < c.cfg.MinBackoff {
-		t.Fatalf("MaxBackoff = %v, want >= %v", c.cfg.MaxBackoff, c.cfg.MinBackoff)
+	if c.Config.MaxBackoff < c.Config.MinBackoff {
+		t.Fatalf("MaxBackoff = %v, want >= %v", c.Config.MaxBackoff, c.Config.MinBackoff)
 	}
 }
 
@@ -75,7 +75,7 @@ func TestWithJitter(t *testing.T) {
 func TestBackoffGrowsAndCaps(t *testing.T) {
 	t.Parallel()
 
-	b := newBackoff(Config{
+	b := newBackoff(&Config{
 		MinBackoff:       10 * time.Millisecond,
 		MaxBackoff:       40 * time.Millisecond,
 		StableConnection: time.Second,
@@ -96,7 +96,7 @@ func TestBackoffGrowsAndCaps(t *testing.T) {
 func TestBackoffResetIfStable(t *testing.T) {
 	t.Parallel()
 
-	b := newBackoff(Config{
+	b := newBackoff(&Config{
 		MinBackoff:       time.Second,
 		MaxBackoff:       8 * time.Second,
 		StableConnection: 5 * time.Second,
@@ -232,7 +232,7 @@ func startClient(t *testing.T, cfg Config, ctx context.Context) <-chan string {
 	}()
 
 	errCh := make(chan error, 1)
-	go func() { errCh <- New(cfg).Run(ctx, stdinReader, outputWriter) }()
+	go func() { errCh <- New(&cfg).Run(ctx, stdinReader, outputWriter) }()
 	t.Cleanup(func() {
 		select {
 		case <-errCh:
@@ -311,7 +311,7 @@ func TestRunSendsAndPrintsMessages(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- New(clientCfg).Run(ctx, strings.NewReader("hello\n"), outputWriter)
+		errCh <- New(&clientCfg).Run(ctx, strings.NewReader("hello\n"), outputWriter)
 	}()
 
 	gotWelcome := false
