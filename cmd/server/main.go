@@ -2,43 +2,71 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
-	"codeberg.org/samposa_1337/Nkit/internal/server"
+	"codeberg.org/Dehydration/lentitud/internal/server"
 )
 
 func main() {
+	cfg, level, err := parseConfig(os.Args[1:], os.Getenv)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
+		fmt.Fprintln(os.Stderr, "configuration error:", err)
+		os.Exit(2)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	srv := server.New(cfg, logger)
+	if err := srv.Run(ctx); err != nil {
+		logger.Error("server failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+func parseConfig(args []string, getenv func(string) string) (server.Config, slog.Level, error) {
 	cfg := server.DefaultConfig()
 
-	if v := os.Getenv("NKIT_ADDR"); v != "" {
+	if v := getenv("NKIT_ADDR"); v != "" {
 		cfg.Addr = v
 	}
-	if v := os.Getenv("NKIT_TLS_CERT"); v != "" {
+	if v := getenv("NKIT_TLS_CERT"); v != "" {
 		cfg.TLSCert = v
 	}
-	if v := os.Getenv("NKIT_TLS_KEY"); v != "" {
+	if v := getenv("NKIT_TLS_KEY"); v != "" {
 		cfg.TLSKey = v
 	}
 
-	originsDefault := os.Getenv("NKIT_ALLOWED_ORIGINS")
-	logLevelDefault := os.Getenv("NKIT_LOG_LEVEL")
+	originsDefault := getenv("NKIT_ALLOWED_ORIGINS")
+	logLevelDefault := getenv("NKIT_LOG_LEVEL")
 
-	origins := flag.String("allowed-origins", originsDefault, "comma-separated list of additional allowed origins")
-	addr := flag.String("addr", cfg.Addr, "HTTP listen address")
-	maxMessageBytes := flag.Int("max-message-bytes", cfg.MaxMessageBytes, "maximum message size in bytes")
-	joinTimeout := flag.Duration("join-timeout", cfg.JoinTimeout, "time allowed to send the join message")
-	pingInterval := flag.Duration("ping-interval", cfg.PingInterval, "WebSocket ping interval")
-	pongWait := flag.Duration("pong-wait", cfg.PongWait, "time to wait for a pong before disconnecting")
-	rateLimit := flag.Int("rate-limit", cfg.RateLimitPerSecond, "maximum messages per second per client")
-	tlsCert := flag.String("tls-cert", cfg.TLSCert, "TLS certificate file")
-	tlsKey := flag.String("tls-key", cfg.TLSKey, "TLS private key file")
-	logLevel := flag.String("log-level", logLevelDefault, "log level: debug, info, warn, error")
-	flag.Parse()
+	fs := flag.NewFlagSet("server", flag.ContinueOnError)
+	origins := fs.String("allowed-origins", originsDefault, "comma-separated list of additional allowed origins")
+	addr := fs.String("addr", cfg.Addr, "HTTP listen address")
+	maxMessageBytes := fs.Int("max-message-bytes", cfg.MaxMessageBytes, "maximum message size in bytes")
+	joinTimeout := fs.Duration("join-timeout", cfg.JoinTimeout, "time allowed to send the join message")
+	pingInterval := fs.Duration("ping-interval", cfg.PingInterval, "WebSocket ping interval")
+	pongWait := fs.Duration("pong-wait", cfg.PongWait, "time to wait for a pong before disconnecting")
+	rateLimit := fs.Int("rate-limit", cfg.RateLimitPerSecond, "maximum messages per second per client")
+	tlsCert := fs.String("tls-cert", cfg.TLSCert, "TLS certificate file")
+	tlsKey := fs.String("tls-key", cfg.TLSKey, "TLS private key file")
+	logLevel := fs.String("log-level", logLevelDefault, "log level: debug, info, warn, error")
+
+	if err := fs.Parse(args); err != nil {
+		return cfg, 0, err
+	}
 
 	cfg.Addr = *addr
 	cfg.MaxMessageBytes = *maxMessageBytes
@@ -50,17 +78,7 @@ func main() {
 	cfg.TLSKey = *tlsKey
 	cfg.AllowedOrigins = splitList(*origins)
 
-	level := parseLevel(*logLevel)
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	srv := server.New(cfg, logger)
-	if err := srv.Run(ctx); err != nil {
-		logger.Error("server failed", "error", err)
-		os.Exit(1)
-	}
+	return cfg, parseLevel(*logLevel), nil
 }
 
 func splitList(value string) []string {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -82,12 +83,14 @@ func ValidateText(text string, maxBytes int) error {
 	}
 	for _, r := range text {
 		switch {
-		case r == 0:
-			return errors.New("message contains a NUL byte")
 		case r == '\r' || r == '\n':
 			return errors.New("message must be a single line")
-		case r < 0x20 && r != '\t':
+		case r == '\t':
+			continue
+		case unicode.IsControl(r):
 			return errors.New("message contains a control character")
+		case unicode.Is(unicode.Cf, r):
+			return errors.New("message contains a formatting character")
 		}
 	}
 	return nil

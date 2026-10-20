@@ -10,10 +10,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
-	"codeberg.org/samposa_1337/Nkit/internal/hub"
-	"codeberg.org/samposa_1337/Nkit/internal/protocol"
+	"codeberg.org/Dehydration/lentitud/internal/hub"
+	"codeberg.org/Dehydration/lentitud/internal/protocol"
 
 	"github.com/gorilla/websocket"
 )
@@ -53,6 +54,11 @@ type Server struct {
 	log      *slog.Logger
 	allowed  map[string]struct{}
 	upgrader websocket.Upgrader
+
+	mu      sync.Mutex
+	closing bool
+	conns   map[*websocket.Conn]struct{}
+	wg      sync.WaitGroup
 }
 
 func New(cfg Config, logger *slog.Logger) *Server {
@@ -97,6 +103,7 @@ func New(cfg Config, logger *slog.Logger) *Server {
 		hub:     hub.New(),
 		log:     logger,
 		allowed: allowed,
+		conns:   make(map[*websocket.Conn]struct{}),
 	}
 	s.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
@@ -141,11 +148,17 @@ func (s *Server) Run(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		s.log.Info("server shutting down")
-		s.hub.CloseAll()
+		s.beginShutdown()
+		s.broadcastSystem("server shutting down")
+		clients := s.hub.CloseAll()
+		s.interruptConnections()
+
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout)
 		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return err
+		shutdownErr := srv.Shutdown(shutdownCtx)
+		s.waitForHandlers(shutdownCtx, clients)
+		if shutdownErr != nil {
+			return shutdownErr
 		}
 		err := <-errCh
 		if errors.Is(err, http.ErrServerClosed) {
@@ -153,11 +166,80 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		return err
 	case err := <-errCh:
+		s.beginShutdown()
 		s.hub.CloseAll()
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return err
+	}
+}
+
+func (s *Server) beginShutdown() {
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
+}
+
+func (s *Server) track() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closing {
+		return false
+	}
+	s.wg.Add(1)
+	return true
+}
+
+func (s *Server) register(conn *websocket.Conn) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closing {
+		return false
+	}
+	s.conns[conn] = struct{}{}
+	return true
+}
+
+func (s *Server) unregister(conn *websocket.Conn) {
+	s.mu.Lock()
+	delete(s.conns, conn)
+	s.mu.Unlock()
+}
+
+func (s *Server) interruptConnections() {
+	s.mu.Lock()
+	conns := make([]*websocket.Conn, 0, len(s.conns))
+	for conn := range s.conns {
+		conns = append(conns, conn)
+	}
+	s.mu.Unlock()
+
+	for _, conn := range conns {
+		_ = conn.SetReadDeadline(time.Now())
+	}
+}
+
+func (s *Server) waitForHandlers(ctx context.Context, clients []*hub.Client) {
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return
+	case <-ctx.Done():
+	}
+
+	for _, c := range clients {
+		c.Close()
+	}
+	s.hub.CloseAllNow()
+	select {
+	case <-done:
+	case <-time.After(s.cfg.WriteTimeout):
 	}
 }
 
@@ -178,12 +260,23 @@ func (s *Server) checkOrigin(r *http.Request) bool {
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	if !s.track() {
+		http.Error(w, "server is shutting down", http.StatusServiceUnavailable)
+		return
+	}
+	defer s.wg.Done()
+
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.log.Warn("websocket upgrade failed", "error", err, "remote", r.RemoteAddr)
 		return
 	}
 	defer conn.Close()
+
+	if !s.register(conn) {
+		return
+	}
+	defer s.unregister(conn)
 
 	s.serve(conn, r.RemoteAddr)
 }
@@ -283,8 +376,14 @@ func (s *Server) serve(conn *websocket.Conn, remote string) {
 				continue
 			}
 			out := protocol.New(protocol.TypeMessage, join.Nick, env.Text)
-			s.send(c, out)
-			s.hub.Broadcast(c, mustMarshal(out))
+			data, err := out.Marshal()
+			if err != nil {
+				s.log.Error("failed to marshal message", "error", err)
+				s.sendError(c, "failed to encode message")
+				continue
+			}
+			s.sendData(c, data)
+			s.hub.Broadcast(c, data)
 		default:
 			s.sendError(c, "unsupported message type")
 		}
@@ -336,6 +435,10 @@ func (s *Server) send(c *hub.Client, env protocol.Envelope) {
 		s.log.Error("failed to marshal message", "error", err)
 		return
 	}
+	s.sendData(c, data)
+}
+
+func (s *Server) sendData(c *hub.Client, data []byte) {
 	if !c.Enqueue(data) {
 		c.Close()
 	}
@@ -346,11 +449,21 @@ func (s *Server) sendError(c *hub.Client, text string) {
 }
 
 func (s *Server) broadcastSystem(text string) {
-	s.hub.Broadcast(nil, mustMarshal(protocol.New(protocol.TypeSystem, "", text)))
+	data, err := protocol.New(protocol.TypeSystem, "", text).Marshal()
+	if err != nil {
+		s.log.Error("failed to marshal system message", "error", err)
+		return
+	}
+	s.hub.Broadcast(nil, data)
 }
 
 func (s *Server) broadcastSystemExcept(c *hub.Client, text string) {
-	s.hub.Broadcast(c, mustMarshal(protocol.New(protocol.TypeSystem, "", text)))
+	data, err := protocol.New(protocol.TypeSystem, "", text).Marshal()
+	if err != nil {
+		s.log.Error("failed to marshal system message", "error", err)
+		return
+	}
+	s.hub.Broadcast(c, data)
 }
 
 func (s *Server) fail(conn *websocket.Conn, text string) {
@@ -361,14 +474,6 @@ func (s *Server) fail(conn *websocket.Conn, text string) {
 	_ = conn.SetWriteDeadline(time.Now().Add(s.cfg.WriteTimeout))
 	_ = conn.WriteMessage(websocket.TextMessage, data)
 	_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, text))
-}
-
-func mustMarshal(env protocol.Envelope) []byte {
-	data, err := env.Marshal()
-	if err != nil {
-		panic(err)
-	}
-	return data
 }
 
 type rateLimiter struct {

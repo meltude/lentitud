@@ -3,8 +3,9 @@ package hub
 import (
 	"errors"
 	"sync"
+	"time"
 
-	"codeberg.org/samposa_1337/Nkit/internal/protocol"
+	"codeberg.org/Dehydration/lentitud/internal/protocol"
 
 	"github.com/gorilla/websocket"
 )
@@ -32,10 +33,6 @@ func NewClient(conn *websocket.Conn, sendBuffer int) *Client {
 		send: make(chan []byte, sendBuffer),
 		done: make(chan struct{}),
 	}
-}
-
-func (c *Client) Nick() string {
-	return c.nick
 }
 
 func (c *Client) Send() <-chan []byte {
@@ -76,6 +73,12 @@ func (c *Client) Close() {
 			_ = c.Conn.Close()
 		}
 	})
+}
+
+func (c *Client) interruptRead() {
+	if c.Conn != nil {
+		_ = c.Conn.SetReadDeadline(time.Now())
+	}
 }
 
 type Hub struct {
@@ -139,19 +142,32 @@ func (h *Hub) Broadcast(sender *Client, msg []byte) {
 	}
 }
 
-func (h *Hub) CloseAll() {
+func (h *Hub) CloseAll() []*Client {
+	clients := h.drain()
+	for _, c := range clients {
+		c.Stop()
+		c.interruptRead()
+	}
+	return clients
+}
+
+func (h *Hub) CloseAllNow() {
+	for _, c := range h.drain() {
+		c.Close()
+	}
+}
+
+func (h *Hub) drain() []*Client {
 	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	clients := make([]*Client, 0, len(h.clients))
 	for c := range h.clients {
 		clients = append(clients, c)
 	}
 	h.clients = make(map[*Client]struct{})
 	h.nicks = make(map[string]*Client)
-	h.mu.Unlock()
-
-	for _, c := range clients {
-		c.Close()
-	}
+	return clients
 }
 
 func (h *Hub) Len() int {

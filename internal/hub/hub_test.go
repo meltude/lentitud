@@ -105,6 +105,63 @@ func TestBroadcastExcludesSenderAndDropsSlowClients(t *testing.T) {
 	}
 }
 
+func TestEnqueueAfterStopFails(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(nil, 1)
+	c.Stop()
+
+	if c.Enqueue([]byte("late")) {
+		t.Fatal("Enqueue() after Stop() = true, want false")
+	}
+}
+
+func TestStopAndCloseAreIdempotent(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(nil, 1)
+	c.Stop()
+	c.Stop()
+	c.Close()
+	c.Close()
+
+	select {
+	case <-c.Done():
+	default:
+		t.Fatal("client was not stopped")
+	}
+}
+
+func TestCloseAllNow(t *testing.T) {
+	t.Parallel()
+
+	h := New()
+	clients := []*Client{NewClient(nil, 4), NewClient(nil, 4)}
+	for i, c := range clients {
+		if err := h.Add(c, string(rune('a'+i))); err != nil {
+			t.Fatalf("Add(%d) error = %v", i, err)
+		}
+	}
+
+	h.CloseAllNow()
+	h.CloseAll()
+	h.CloseAllNow()
+
+	if got := h.Len(); got != 0 {
+		t.Fatalf("Len() after CloseAllNow = %d, want 0", got)
+	}
+	for i, c := range clients {
+		select {
+		case <-c.Done():
+		default:
+			t.Fatalf("client %d was not closed", i)
+		}
+	}
+	if h.NickRegistered("a") || h.NickRegistered("b") {
+		t.Fatal("nicknames were not released")
+	}
+}
+
 func TestCloseAll(t *testing.T) {
 	t.Parallel()
 

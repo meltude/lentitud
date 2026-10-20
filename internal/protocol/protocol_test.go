@@ -52,6 +52,11 @@ func TestValidateText(t *testing.T) {
 		{name: "carriage return", text: "hello\rworld", max: 100, wantErr: true},
 		{name: "nul", text: "hello\x00world", max: 100, wantErr: true},
 		{name: "control", text: "hello\x01world", max: 100, wantErr: true},
+		{name: "del", text: "hello\x7fworld", max: 100, wantErr: true},
+		{name: "c1 control", text: "hello\u0085world", max: 100, wantErr: true},
+		{name: "bidi override", text: "hello\u202eworld", max: 100, wantErr: true},
+		{name: "zero width space", text: "hello\u200bworld", max: 100, wantErr: true},
+		{name: "emoji", text: "hello \U0001f600", max: 100},
 		{name: "default max", text: "hello", max: 0},
 	}
 

@@ -1,4 +1,4 @@
-module codeberg.org/samposa_1337/Nkit
+module codeberg.org/Dehydration/lentitud
 
 go 1.26.0
 

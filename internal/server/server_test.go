@@ -1,16 +1,19 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"codeberg.org/samposa_1337/Nkit/internal/protocol"
+	"codeberg.org/Dehydration/lentitud/internal/protocol"
 
 	"github.com/gorilla/websocket"
 )
@@ -186,6 +189,57 @@ func TestBinaryAndUnknownMessages(t *testing.T) {
 	}
 }
 
+func TestNewAppliesDefaults(t *testing.T) {
+	t.Parallel()
+
+	s := New(Config{}, nil)
+
+	if s.cfg.MaxMessageBytes != protocol.MaxMessageBytes {
+		t.Fatalf("MaxMessageBytes = %d, want %d", s.cfg.MaxMessageBytes, protocol.MaxMessageBytes)
+	}
+	if s.cfg.SendBuffer != 256 {
+		t.Fatalf("SendBuffer = %d, want 256", s.cfg.SendBuffer)
+	}
+	if s.cfg.JoinTimeout != 10*time.Second {
+		t.Fatalf("JoinTimeout = %v, want 10s", s.cfg.JoinTimeout)
+	}
+	if s.cfg.WriteTimeout != 10*time.Second {
+		t.Fatalf("WriteTimeout = %v, want 10s", s.cfg.WriteTimeout)
+	}
+	if s.cfg.PingInterval != 30*time.Second {
+		t.Fatalf("PingInterval = %v, want 30s", s.cfg.PingInterval)
+	}
+	if s.cfg.PongWait != 60*time.Second {
+		t.Fatalf("PongWait = %v, want 60s", s.cfg.PongWait)
+	}
+	if s.cfg.RateLimitPerSecond != 10 {
+		t.Fatalf("RateLimitPerSecond = %d, want 10", s.cfg.RateLimitPerSecond)
+	}
+	if s.cfg.ShutdownTimeout != 5*time.Second {
+		t.Fatalf("ShutdownTimeout = %v, want 5s", s.cfg.ShutdownTimeout)
+	}
+}
+
+func TestNewExpandsPongWaitAndTrimsOrigins(t *testing.T) {
+	t.Parallel()
+
+	s := New(Config{
+		PingInterval:   10 * time.Second,
+		PongWait:       5 * time.Second,
+		AllowedOrigins: []string{"  ", " http://allowed.example "},
+	}, nil)
+
+	if s.cfg.PongWait != 20*time.Second {
+		t.Fatalf("PongWait = %v, want 20s", s.cfg.PongWait)
+	}
+	if _, ok := s.allowed["http://allowed.example"]; !ok {
+		t.Fatal("allowed origin was not trimmed and stored")
+	}
+	if _, ok := s.allowed[""]; ok {
+		t.Fatal("blank origin was stored")
+	}
+}
+
 func TestOriginValidation(t *testing.T) {
 	t.Parallel()
 
@@ -201,6 +255,17 @@ func TestOriginValidation(t *testing.T) {
 	}
 	if resp == nil || resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("cross-origin response = %#v, want 403", resp)
+	}
+
+	conn, resp, err = websocket.DefaultDialer.Dial(u, http.Header{
+		"Origin": []string{"://invalid"},
+	})
+	if err == nil {
+		conn.Close()
+		t.Fatal("malformed origin unexpectedly succeeded")
+	}
+	if resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("malformed origin response = %#v, want 403", resp)
 	}
 
 	allowed := newTestServer(t, func(cfg *Config) {
@@ -229,6 +294,176 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 	if string(body) != "ok\n" {
 		t.Fatalf("body = %q, want %q", body, "ok\n")
+	}
+}
+
+func TestServerCompletesCloseHandshake(t *testing.T) {
+	t.Parallel()
+
+	ts := newTestServer(t, nil)
+	conn := dial(t, ts, "")
+	join(t, conn, "alice")
+
+	_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	if err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")); err != nil {
+		t.Fatalf("write close: %v", err)
+	}
+
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	for {
+		_, _, err := conn.ReadMessage()
+		if err == nil {
+			continue
+		}
+		if !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+			t.Fatalf("read error = %v, want normal closure", err)
+		}
+		return
+	}
+}
+
+func TestGracefulShutdown(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Addr = freeAddr(t)
+	cfg.ShutdownTimeout = 2 * time.Second
+	cfg.WriteTimeout = 2 * time.Second
+	cfg.PingInterval = time.Second
+	cfg.PongWait = 3 * time.Second
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runErr := make(chan error, 1)
+	go func() { runErr <- New(cfg, nil).Run(ctx) }()
+
+	conn := dialURL(t, "ws://"+cfg.Addr+"/ws")
+	join(t, conn, "alice")
+
+	cancel()
+
+	sawNotice := false
+	for {
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			if !sawNotice {
+				t.Fatalf("connection ended before shutdown notice: %v", err)
+			}
+			if !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+				t.Fatalf("read error = %v, want normal closure", err)
+			}
+			break
+		}
+
+		var env protocol.Envelope
+		if err := json.Unmarshal(data, &env); err != nil {
+			t.Fatalf("unmarshal %q: %v", data, err)
+		}
+		if env.Type == protocol.TypeSystem && env.Text == "server shutting down" {
+			sawNotice = true
+		}
+	}
+
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run() did not return")
+	}
+}
+
+func TestRunReturnsErrorWhenAddrIsInUse(t *testing.T) {
+	t.Parallel()
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer l.Close()
+
+	cfg := DefaultConfig()
+	cfg.Addr = l.Addr().String()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := New(cfg, nil).Run(ctx); err == nil {
+		t.Fatal("Run() error = nil, want bind error")
+	}
+}
+
+func TestRunRequiresBothTLSFiles(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		cfg  func(*Config)
+	}{
+		{name: "cert only", cfg: func(c *Config) { c.TLSCert = "cert.pem" }},
+		{name: "key only", cfg: func(c *Config) { c.TLSKey = "key.pem" }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := DefaultConfig()
+			tt.cfg(&cfg)
+			if err := New(cfg, nil).Run(context.Background()); err == nil {
+				t.Fatal("Run() error = nil, want TLS configuration error")
+			}
+		})
+	}
+}
+
+func TestRunFailsWithMissingTLSFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := DefaultConfig()
+	cfg.Addr = freeAddr(t)
+	cfg.TLSCert = filepath.Join(dir, "cert.pem")
+	cfg.TLSKey = filepath.Join(dir, "key.pem")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := New(cfg, nil).Run(ctx); err == nil {
+		t.Fatal("Run() error = nil, want TLS load error")
+	}
+}
+
+func freeAddr(t *testing.T) string {
+	t.Helper()
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := l.Addr().String()
+	if err := l.Close(); err != nil {
+		t.Fatalf("close listener: %v", err)
+	}
+	return addr
+}
+
+func dialURL(t *testing.T, url string) *websocket.Conn {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+		if err == nil {
+			t.Cleanup(func() { _ = conn.Close() })
+			return conn
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("dial %q: %v", url, err)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

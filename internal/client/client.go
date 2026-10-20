@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -12,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/samposa_1337/Nkit/internal/protocol"
+	"codeberg.org/Dehydration/lentitud/internal/protocol"
 
 	"github.com/gorilla/websocket"
 )
@@ -43,6 +44,14 @@ func DefaultConfig() Config {
 
 type Client struct {
 	cfg Config
+}
+
+type RejectedError struct {
+	Reason string
+}
+
+func (e *RejectedError) Error() string {
+	return "rejected by the server: " + e.Reason
 }
 
 func New(cfg Config) *Client {
@@ -76,7 +85,7 @@ func (c *Client) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 	inputDone := make(chan struct{})
 	go readInput(ctx, in, input, inputDone)
 
-	backoff := c.cfg.MinBackoff
+	b := newBackoff(c.cfg)
 
 	for {
 		if ctx.Err() != nil {
@@ -94,15 +103,18 @@ func (c *Client) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 		default:
 		}
 
-		if time.Since(started) >= c.cfg.StableConnection {
-			backoff = c.cfg.MinBackoff
-		}
+		b.resetIfStable(time.Since(started))
 
 		if err != nil {
-			fmt.Fprintf(out, "connection error: %v\n", err)
+			var rejected *RejectedError
+			if errors.As(err, &rejected) {
+				fmt.Fprintf(out, "! %s\n", rejected)
+			} else {
+				fmt.Fprintf(out, "connection error: %v\n", err)
+			}
 		}
 
-		wait := withJitter(backoff)
+		wait := b.next()
 		fmt.Fprintf(out, "reconnecting in %s...\n", wait.Round(time.Millisecond))
 
 		timer := time.NewTimer(wait)
@@ -116,10 +128,6 @@ func (c *Client) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 		case <-timer.C:
 		}
 
-		backoff *= 2
-		if backoff > c.cfg.MaxBackoff {
-			backoff = c.cfg.MaxBackoff
-		}
 	}
 }
 
@@ -224,9 +232,15 @@ func (c *Client) writeLoop(ctx context.Context, conn *websocket.Conn, input <-ch
 }
 
 func (c *Client) readLoop(conn *websocket.Conn, out io.Writer) error {
+	joined := false
+	reason := ""
+
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
+			if reason != "" {
+				return &RejectedError{Reason: reason}
+			}
 			return err
 		}
 
@@ -238,13 +252,19 @@ func (c *Client) readLoop(conn *websocket.Conn, out io.Writer) error {
 
 		switch env.Type {
 		case protocol.TypeWelcome:
+			joined = true
+			reason = ""
 			fmt.Fprintf(out, "* connected as %s\n", env.Nick)
 		case protocol.TypeMessage:
 			fmt.Fprintf(out, "<%s> %s\n", env.Nick, env.Text)
 		case protocol.TypeSystem:
 			fmt.Fprintf(out, "* %s\n", env.Text)
 		case protocol.TypeError:
-			fmt.Fprintf(out, "! %s\n", env.Text)
+			if joined {
+				fmt.Fprintf(out, "! %s\n", env.Text)
+				continue
+			}
+			reason = env.Text
 		default:
 			fmt.Fprintf(out, "! unknown message type %q\n", env.Type)
 		}
@@ -276,6 +296,37 @@ func readInput(ctx context.Context, in io.Reader, input chan<- string, done chan
 			return
 		}
 	}
+}
+
+type backoff struct {
+	min    time.Duration
+	max    time.Duration
+	stable time.Duration
+	cur    time.Duration
+}
+
+func newBackoff(cfg Config) *backoff {
+	return &backoff{
+		min:    cfg.MinBackoff,
+		max:    cfg.MaxBackoff,
+		stable: cfg.StableConnection,
+		cur:    cfg.MinBackoff,
+	}
+}
+
+func (b *backoff) resetIfStable(elapsed time.Duration) {
+	if elapsed >= b.stable {
+		b.cur = b.min
+	}
+}
+
+func (b *backoff) next() time.Duration {
+	wait := withJitter(b.cur)
+	b.cur *= 2
+	if b.cur > b.max {
+		b.cur = b.max
+	}
+	return wait
 }
 
 func withJitter(d time.Duration) time.Duration {
