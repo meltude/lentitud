@@ -10,7 +10,10 @@ import (
 	"io"
 	"math/rand/v2"
 	"net/url"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"codeberg.org/Dehydration/lentitud/internal/protocol"
@@ -43,7 +46,8 @@ func DefaultConfig() Config {
 }
 
 type Client struct {
-	cfg Config
+	Config     *Config
+	Connection *websocket.Conn
 }
 
 type RejectedError struct {
@@ -54,7 +58,7 @@ func (e *RejectedError) Error() string {
 	return "rejected by the server: " + e.Reason
 }
 
-func New(cfg Config) *Client {
+func New(cfg *Config) *Client {
 	if cfg.ConnectTimeout <= 0 {
 		cfg.ConnectTimeout = 10 * time.Second
 	}
@@ -73,7 +77,7 @@ func New(cfg Config) *Client {
 	if cfg.StableConnection <= 0 {
 		cfg.StableConnection = 30 * time.Second
 	}
-	return &Client{cfg: cfg}
+	return &Client{Config: cfg}
 }
 
 func (c *Client) Run(ctx context.Context, in io.Reader, out io.Writer) error {
@@ -85,7 +89,7 @@ func (c *Client) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 	inputDone := make(chan struct{})
 	go readInput(ctx, in, input, inputDone)
 
-	b := newBackoff(c.cfg)
+	b := newBackoff(c.Config)
 
 	for {
 		if ctx.Err() != nil {
@@ -93,7 +97,7 @@ func (c *Client) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 		}
 
 		started := time.Now()
-		err := c.session(ctx, input, inputDone, out)
+		err := c.session(ctx, input, out)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -106,8 +110,7 @@ func (c *Client) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 		b.resetIfStable(time.Since(started))
 
 		if err != nil {
-			var rejected *RejectedError
-			if errors.As(err, &rejected) {
+			if rejected, ok := errors.AsType[*RejectedError](err); ok {
 				fmt.Fprintf(out, "! %s\n", rejected)
 			} else {
 				fmt.Fprintf(out, "connection error: %v\n", err)
@@ -132,10 +135,10 @@ func (c *Client) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 }
 
 func (c *Client) validate() error {
-	if err := protocol.ValidateNick(c.cfg.Nick); err != nil {
+	if err := protocol.ValidateNick(c.Config.Nick); err != nil {
 		return fmt.Errorf("invalid nickname: %w", err)
 	}
-	u, err := url.Parse(c.cfg.ServerURL)
+	u, err := url.Parse(c.Config.ServerURL)
 	if err != nil {
 		return fmt.Errorf("invalid server URL: %w", err)
 	}
@@ -148,22 +151,23 @@ func (c *Client) validate() error {
 	return nil
 }
 
-func (c *Client) session(ctx context.Context, input <-chan string, inputDone <-chan struct{}, out io.Writer) error {
-	dialCtx, cancelDial := context.WithTimeout(ctx, c.cfg.ConnectTimeout)
+func (c *Client) session(ctx context.Context, input <-chan string, out io.Writer) error {
+	dialCtx, cancelDial := context.WithTimeout(ctx, c.Config.ConnectTimeout)
 	defer cancelDial()
 
-	dialer := websocket.Dialer{HandshakeTimeout: c.cfg.ConnectTimeout}
-	if c.cfg.Insecure {
+	dialer := websocket.Dialer{HandshakeTimeout: c.Config.ConnectTimeout}
+	if c.Config.Insecure {
 		dialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
-	conn, resp, err := dialer.DialContext(dialCtx, c.cfg.ServerURL, nil)
+	conn, resp, err := dialer.DialContext(dialCtx, c.Config.ServerURL, nil)
 	if err != nil {
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
 		return err
 	}
+	c.Connection = conn
 	defer conn.Close()
 
 	stopClose := context.AfterFunc(ctx, func() {
@@ -171,20 +175,20 @@ func (c *Client) session(ctx context.Context, input <-chan string, inputDone <-c
 	})
 	defer stopClose()
 
-	join, err := protocol.Envelope{Type: protocol.TypeJoin, Nick: c.cfg.Nick}.Marshal()
+	join, err := protocol.Envelope{Type: protocol.TypeJoin, Nick: c.Config.Nick}.Marshal()
 	if err != nil {
 		return err
 	}
-	_ = conn.SetWriteDeadline(time.Now().Add(c.cfg.WriteTimeout))
+	_ = conn.SetWriteDeadline(time.Now().Add(c.Config.WriteTimeout))
 	if err := conn.WriteMessage(websocket.TextMessage, join); err != nil {
 		return err
 	}
 
 	conn.SetPingHandler(func(appData string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(c.cfg.PongWait))
-		return conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(c.cfg.WriteTimeout))
+		_ = conn.SetReadDeadline(time.Now().Add(c.Config.PongWait))
+		return conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(c.Config.WriteTimeout))
 	})
-	_ = conn.SetReadDeadline(time.Now().Add(c.cfg.PongWait))
+	_ = conn.SetReadDeadline(time.Now().Add(c.Config.PongWait))
 
 	sessionCtx, cancelSession := context.WithCancel(ctx)
 	defer cancelSession()
@@ -223,7 +227,7 @@ func (c *Client) writeLoop(ctx context.Context, conn *websocket.Conn, input <-ch
 			if err != nil {
 				return err
 			}
-			_ = conn.SetWriteDeadline(time.Now().Add(c.cfg.WriteTimeout))
+			_ = conn.SetWriteDeadline(time.Now().Add(c.Config.WriteTimeout))
 			if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 				return err
 			}
@@ -272,15 +276,15 @@ func (c *Client) readLoop(conn *websocket.Conn, out io.Writer) error {
 }
 
 func (c *Client) close(conn *websocket.Conn) error {
-	_ = conn.SetReadDeadline(time.Now().Add(c.cfg.WriteTimeout))
+	_ = conn.SetReadDeadline(time.Now().Add(c.Config.WriteTimeout))
 	return conn.WriteControl(
 		websocket.CloseMessage,
 		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
-		time.Now().Add(c.cfg.WriteTimeout),
+		time.Now().Add(c.Config.WriteTimeout),
 	)
 }
 
-func readInput(ctx context.Context, in io.Reader, input chan<- string, done chan<- struct{}) {
+func readInput(ctx context.Context, in io.Reader, input chan<- string, done chan<- struct{}) error {
 	defer close(done)
 	defer close(input)
 
@@ -293,9 +297,13 @@ func readInput(ctx context.Context, in io.Reader, input chan<- string, done chan
 		select {
 		case input <- line:
 		case <-ctx.Done():
-			return
+			return nil
 		}
 	}
+	if scanner.Err() != nil {
+		return scanner.Err()
+	}
+	return nil
 }
 
 type backoff struct {
@@ -305,7 +313,7 @@ type backoff struct {
 	cur    time.Duration
 }
 
-func newBackoff(cfg Config) *backoff {
+func newBackoff(cfg *Config) *backoff {
 	return &backoff{
 		min:    cfg.MinBackoff,
 		max:    cfg.MaxBackoff,
@@ -335,4 +343,16 @@ func withJitter(d time.Duration) time.Duration {
 	}
 	half := d / 2
 	return half + time.Duration(rand.Int64N(int64(half)+1))
+}
+
+func (c *Client) HandleShutdown() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, syscall.SIGINT)
+	go func() {
+		<-ch
+		if c.Connection != nil {
+			c.close(c.Connection)
+		}
+		os.Exit(0)
+	}()
 }
