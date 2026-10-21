@@ -26,8 +26,8 @@ nix build
 The default package contains both binaries:
 
 ```bash
-./result/bin/server
-./result/bin/client -nick alice
+./result/bin/lentitud-server
+./result/bin/lentitud-client -nick alice
 ```
 
 Build a single program:
@@ -37,7 +37,11 @@ nix build github:meltude/lentitud#server
 nix build github:meltude/lentitud#client
 ```
 
-There is intentionally no development shell in the flake.
+Developer shell:
+
+```bash
+nix develop .
+```
 
 ## Build with Go
 
