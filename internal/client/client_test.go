@@ -65,7 +65,7 @@ func TestWithJitter(t *testing.T) {
 	t.Parallel()
 
 	const d = 10 * time.Second
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		got := withJitter(d)
 		if got < d/2 || got > d {
 			t.Fatalf("withJitter(%v) = %v, want between %v and %v", d, got, d/2, d)
