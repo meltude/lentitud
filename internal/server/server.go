@@ -157,27 +157,13 @@ func (s *Server) Run(ctx context.Context) error {
 		s.log.Info("server shutting down")
 		s.beginShutdown()
 		s.broadcastSystem("server shutting down")
-		clients := s.hub.CloseAll()
-		s.interruptConnections()
+		s.hub.Close()
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout)
 		defer cancel()
-		shutdownErr := srv.Shutdown(shutdownCtx)
-		s.waitForHandlers(shutdownCtx, clients)
-		if shutdownErr != nil {
-			return shutdownErr
-		}
-		err := <-errCh
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
+
+		return srv.Shutdown(shutdownCtx)
 	case err := <-errCh:
-		s.beginShutdown()
-		s.hub.CloseAll()
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
 		return err
 	}
 }
@@ -243,7 +229,7 @@ func (s *Server) waitForHandlers(ctx context.Context, clients []*hub.Client) {
 	for _, c := range clients {
 		c.Close()
 	}
-	s.hub.CloseAllNow()
+	s.hub.Close()
 	select {
 	case <-done:
 	case <-time.After(s.cfg.WriteTimeout):
@@ -460,7 +446,7 @@ func (s *Server) serve(conn *websocket.Conn, remote string) {
 	}()
 
 	defer func() {
-		s.hub.Remove(c)
+		s.hub.Remove(c.Nick)
 		c.Stop()
 		select {
 		case <-writerDone:

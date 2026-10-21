@@ -4,7 +4,6 @@ import (
 	"errors"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -18,7 +17,7 @@ type Client struct {
 	done          chan struct{}
 	stopOnce      sync.Once
 	connCloseOnce sync.Once
-	nick          string
+	Nick          string
 }
 
 func NewClient(conn *websocket.Conn, sendBuffer int) *Client {
@@ -72,22 +71,14 @@ func (c *Client) Close() {
 	})
 }
 
-func (c *Client) interruptRead() {
-	if c.Conn != nil {
-		_ = c.Conn.SetReadDeadline(time.Now())
-	}
-}
-
 type Hub struct {
 	mu      sync.RWMutex
-	clients map[*Client]struct{}
-	nicks   map[string]*Client
+	clients map[string]*Client
 }
 
 func New() *Hub {
 	return &Hub{
-		clients: make(map[*Client]struct{}),
-		nicks:   make(map[string]*Client),
+		clients: make(map[string]*Client),
 	}
 }
 
@@ -97,25 +88,18 @@ func (h *Hub) Add(c *Client, nick string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if _, exists := h.nicks[key]; exists {
+	if _, exists := h.clients[key]; exists {
 		return errors.New("nickname already in use")
 	}
 
-	c.nick = nick
-	h.clients[c] = struct{}{}
-	h.nicks[key] = c
+	c.Nick = nick
+	h.clients[key] = c
 	return nil
 }
 
-func (h *Hub) Remove(c *Client) {
+func (h *Hub) Remove(nick string) {
 	h.mu.Lock()
-	if _, ok := h.clients[c]; ok {
-		delete(h.clients, c)
-		key := strings.ToLower(c.nick)
-		if h.nicks[key] == c {
-			delete(h.nicks, key)
-		}
-	}
+	delete(h.clients, strings.ToLower(nick))
 	h.mu.Unlock()
 }
 
@@ -123,7 +107,7 @@ func (h *Hub) Broadcast(sender *Client, msg []byte) {
 	var slow []*Client
 
 	h.mu.RLock()
-	for c := range h.clients {
+	for _, c := range h.clients {
 		if c == sender {
 			continue
 		}
@@ -134,48 +118,16 @@ func (h *Hub) Broadcast(sender *Client, msg []byte) {
 	h.mu.RUnlock()
 
 	for _, c := range slow {
-		h.Remove(c)
+		h.Remove(c.Nick)
 		c.Close()
 	}
 }
 
-func (h *Hub) CloseAll() []*Client {
-	clients := h.drain()
-	for _, c := range clients {
-		c.Stop()
-		c.interruptRead()
-	}
-	return clients
-}
-
-func (h *Hub) CloseAllNow() {
-	for _, c := range h.drain() {
-		c.Close()
-	}
-}
-
-func (h *Hub) drain() []*Client {
+func (h *Hub) Close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-
-	clients := make([]*Client, 0, len(h.clients))
-	for c := range h.clients {
-		clients = append(clients, c)
+	for _, c := range h.clients {
+		c.Stop()
 	}
-	h.clients = make(map[*Client]struct{})
-	h.nicks = make(map[string]*Client)
-	return clients
-}
-
-func (h *Hub) Len() int {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return len(h.clients)
-}
-
-func (h *Hub) NickRegistered(nick string) bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	_, ok := h.nicks[strings.ToLower(nick)]
-	return ok
+	clear(h.clients)
 }

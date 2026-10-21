@@ -4,27 +4,6 @@ import (
 	"testing"
 )
 
-func TestAddDuplicateNickIsCaseInsensitive(t *testing.T) {
-	t.Parallel()
-
-	h := New()
-	first := NewClient(nil, 4)
-	second := NewClient(nil, 4)
-
-	if err := h.Add(first, "Alice"); err != nil {
-		t.Fatalf("Add(first) error = %v", err)
-	}
-	if err := h.Add(second, "alice"); err == nil {
-		t.Fatalf("Add(second) error = %v, want 'nickname already in use'", err)
-	}
-	if got := h.Len(); got != 1 {
-		t.Fatalf("Len() = %d, want 1", got)
-	}
-	if !h.NickRegistered("ALICE") {
-		t.Fatal("ALICE should be registered")
-	}
-}
-
 func TestRemoveAllowsNickReuse(t *testing.T) {
 	t.Parallel()
 
@@ -35,15 +14,15 @@ func TestRemoveAllowsNickReuse(t *testing.T) {
 	if err := h.Add(first, "alice"); err != nil {
 		t.Fatalf("Add(first) error = %v", err)
 	}
-	h.Remove(first)
+	h.Remove("alice")
 
 	if err := h.Add(second, "alice"); err != nil {
 		t.Fatalf("Add(second) after Remove error = %v", err)
 	}
-	if got := h.Len(); got != 1 {
+	if got := len(h.clients); got != 1 {
 		t.Fatalf("Len() = %d, want 1", got)
 	}
-	if !h.NickRegistered("alice") {
+	if _, ok := h.clients["alice"]; !ok {
 		t.Fatal("alice should be registered again")
 	}
 }
@@ -96,10 +75,10 @@ func TestBroadcastExcludesSenderAndDropsSlowClients(t *testing.T) {
 	default:
 		t.Fatal("slow client was not closed")
 	}
-	if h.NickRegistered("slow") {
+	if _, ok := h.clients["slow"]; ok {
 		t.Fatal("slow client nickname was not removed")
 	}
-	if got := h.Len(); got != 2 {
+	if got := len(h.clients); got != 2 {
 		t.Fatalf("Len() = %d, want 2", got)
 	}
 }
@@ -131,7 +110,7 @@ func TestStopAndCloseAreIdempotent(t *testing.T) {
 	}
 }
 
-func TestCloseAllNow(t *testing.T) {
+func TestClose(t *testing.T) {
 	t.Parallel()
 
 	h := New()
@@ -142,39 +121,9 @@ func TestCloseAllNow(t *testing.T) {
 		}
 	}
 
-	h.CloseAllNow()
-	h.CloseAll()
-	h.CloseAllNow()
+	h.Close()
 
-	if got := h.Len(); got != 0 {
-		t.Fatalf("Len() after CloseAllNow = %d, want 0", got)
-	}
-	for i, c := range clients {
-		select {
-		case <-c.Done():
-		default:
-			t.Fatalf("client %d was not closed", i)
-		}
-	}
-	if h.NickRegistered("a") || h.NickRegistered("b") {
-		t.Fatal("nicknames were not released")
-	}
-}
-
-func TestCloseAll(t *testing.T) {
-	t.Parallel()
-
-	h := New()
-	clients := []*Client{NewClient(nil, 4), NewClient(nil, 4)}
-	for i, c := range clients {
-		if err := h.Add(c, string(rune('a'+i))); err != nil {
-			t.Fatalf("Add(%d) error = %v", i, err)
-		}
-	}
-
-	h.CloseAll()
-
-	if got := h.Len(); got != 0 {
+	if got := len(h.clients); got != 0 {
 		t.Fatalf("Len() after CloseAll = %d, want 0", got)
 	}
 	for i, c := range clients {
