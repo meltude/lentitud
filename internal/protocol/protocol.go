@@ -2,10 +2,8 @@ package protocol
 
 import (
 	"errors"
-	"fmt"
+	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 )
 
 const (
@@ -40,48 +38,18 @@ func New(t Type, nick, text string) Envelope {
 }
 
 func ValidateNick(nick string) error {
-	if nick == "" {
-		return errors.New("nickname is required")
-	}
-	if len(nick) > MaxNickBytes {
-		return fmt.Errorf("nickname is too long: %d bytes (max %d)", len(nick), MaxNickBytes)
-	}
-	for _, r := range nick {
-		if (r >= 'a' && r <= 'z') ||
-			(r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') ||
-			r == '_' || r == '-' {
-			continue
-		}
-		return fmt.Errorf("nickname contains invalid character %q", r)
+	if len(nick) == 0 || len(nick) > MaxNickBytes {
+		return errors.New("invalid nickname")
 	}
 	return nil
 }
 
 func ValidateText(text string, maxBytes int) error {
-	if text == "" {
-		return errors.New("message is empty")
-	}
 	if maxBytes <= 0 {
 		maxBytes = MaxMessageBytes
 	}
-	if len(text) > maxBytes {
-		return fmt.Errorf("message is too long: %d bytes (max %d)", len(text), maxBytes)
-	}
-	if !utf8.ValidString(text) {
-		return errors.New("message is not valid UTF-8")
-	}
-	for _, r := range text {
-		switch {
-		case r == '\r' || r == '\n':
-			return errors.New("message must be a single line")
-		case r == '\t':
-			continue
-		case unicode.IsControl(r):
-			return errors.New("message contains a control character")
-		case unicode.Is(unicode.Cf, r):
-			return errors.New("message contains a formatting character")
-		}
+	if len(text) == 0 || len(text) > maxBytes || strings.ContainsAny(text, "\r\n") {
+		return errors.New("invalid message")
 	}
 	return nil
 }
