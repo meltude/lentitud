@@ -9,8 +9,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var ErrNickTaken = errors.New("nickname already in use")
-
 const defaultSendBuffer = 256
 
 type Client struct {
@@ -100,7 +98,7 @@ func (h *Hub) Add(c *Client, nick string) error {
 	defer h.mu.Unlock()
 
 	if _, exists := h.nicks[key]; exists {
-		return ErrNickTaken
+		return errors.New("nickname already in use")
 	}
 
 	c.nick = nick

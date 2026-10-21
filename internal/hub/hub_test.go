@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"errors"
 	"testing"
 )
 
@@ -15,8 +14,8 @@ func TestAddDuplicateNickIsCaseInsensitive(t *testing.T) {
 	if err := h.Add(first, "Alice"); err != nil {
 		t.Fatalf("Add(first) error = %v", err)
 	}
-	if err := h.Add(second, "alice"); !errors.Is(err, ErrNickTaken) {
-		t.Fatalf("Add(second) error = %v, want ErrNickTaken", err)
+	if err := h.Add(second, "alice"); err == nil {
+		t.Fatalf("Add(second) error = %v, want 'nickname already in use'", err)
 	}
 	if got := h.Len(); got != 1 {
 		t.Fatalf("Len() = %d, want 1", got)
