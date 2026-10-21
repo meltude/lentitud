@@ -3,6 +3,7 @@ package client
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http/httptest"
@@ -136,7 +137,7 @@ func TestRejectedJoinReportsServerReason(t *testing.T) {
 	}
 	defer occupier.Close()
 
-	joinData, err := (protocol.Envelope{Type: protocol.TypeJoin, Nick: "alice"}).Marshal()
+	joinData, err := json.Marshal(protocol.Envelope{Type: protocol.TypeJoin, Nick: "alice"})
 	if err != nil {
 		t.Fatalf("marshal join: %v", err)
 	}

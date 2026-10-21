@@ -175,7 +175,7 @@ func (c *Client) session(ctx context.Context, input <-chan string, out io.Writer
 	})
 	defer stopClose()
 
-	join, err := protocol.Envelope{Type: protocol.TypeJoin, Nick: c.Config.Nick}.Marshal()
+	join, err := json.Marshal(protocol.Envelope{Type: protocol.TypeJoin, Nick: c.Config.Nick})
 	if err != nil {
 		return err
 	}
@@ -223,7 +223,7 @@ func (c *Client) writeLoop(ctx context.Context, conn *websocket.Conn, input <-ch
 			if !ok {
 				return c.close(conn)
 			}
-			data, err := protocol.Envelope{Type: protocol.TypeMessage, Text: line}.Marshal()
+			data, err := json.Marshal(protocol.Envelope{Type: protocol.TypeMessage, Text: line})
 			if err != nil {
 				return err
 			}

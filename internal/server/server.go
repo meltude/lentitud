@@ -517,7 +517,7 @@ func (s *Server) serve(conn *websocket.Conn, remote string) {
 				continue
 			}
 			out := protocol.New(protocol.TypeMessage, join.Nick, env.Text)
-			data, err := out.Marshal()
+			data, err := json.Marshal(out)
 			if err != nil {
 				s.log.Error("failed to marshal message", "error", err)
 				s.sendError(c, "failed to encode message")
@@ -571,7 +571,7 @@ func (s *Server) writeMessage(c *hub.Client, messageType int, msg []byte) error 
 }
 
 func (s *Server) send(c *hub.Client, env protocol.Envelope) {
-	data, err := env.Marshal()
+	data, err := json.Marshal(env)
 	if err != nil {
 		s.log.Error("failed to marshal message", "error", err)
 		return
@@ -590,7 +590,7 @@ func (s *Server) sendError(c *hub.Client, text string) {
 }
 
 func (s *Server) broadcastSystem(text string) {
-	data, err := protocol.New(protocol.TypeSystem, "", text).Marshal()
+	data, err := json.Marshal(protocol.New(protocol.TypeSystem, "", text))
 	if err != nil {
 		s.log.Error("failed to marshal system message", "error", err)
 		return
@@ -599,7 +599,7 @@ func (s *Server) broadcastSystem(text string) {
 }
 
 func (s *Server) broadcastSystemExcept(c *hub.Client, text string) {
-	data, err := protocol.New(protocol.TypeSystem, "", text).Marshal()
+	data, err := json.Marshal(protocol.New(protocol.TypeSystem, "", text))
 	if err != nil {
 		s.log.Error("failed to marshal system message", "error", err)
 		return
@@ -608,7 +608,7 @@ func (s *Server) broadcastSystemExcept(c *hub.Client, text string) {
 }
 
 func (s *Server) fail(conn *websocket.Conn, text string) {
-	data, err := protocol.New(protocol.TypeError, "", text).Marshal()
+	data, err := json.Marshal(protocol.New(protocol.TypeError, "", text))
 	if err != nil {
 		return
 	}

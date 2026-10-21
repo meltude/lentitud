@@ -75,7 +75,7 @@ func TestEnvelopeRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	env := New(TypeMessage, "alice", "hello")
-	data, err := env.Marshal()
+	data, err := json.Marshal(env)
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}

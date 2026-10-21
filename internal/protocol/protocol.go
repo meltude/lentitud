@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -39,10 +38,6 @@ func New(t Type, nick, text string) Envelope {
 		Text: text,
 		Time: time.Now().UTC().Format(time.RFC3339),
 	}
-}
-
-func (e Envelope) Marshal() ([]byte, error) {
-	return json.Marshal(e)
 }
 
 func NickKey(nick string) string {
