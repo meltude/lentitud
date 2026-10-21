@@ -59,25 +59,9 @@ func (e *RejectedError) Error() string {
 }
 
 func New(cfg *Config) *Client {
-	if cfg.ConnectTimeout <= 0 {
-		cfg.ConnectTimeout = 10 * time.Second
+	return &Client{
+		Config: cfg,
 	}
-	if cfg.WriteTimeout <= 0 {
-		cfg.WriteTimeout = 10 * time.Second
-	}
-	if cfg.PongWait <= 0 {
-		cfg.PongWait = 90 * time.Second
-	}
-	if cfg.MinBackoff <= 0 {
-		cfg.MinBackoff = time.Second
-	}
-	if cfg.MaxBackoff < cfg.MinBackoff {
-		cfg.MaxBackoff = cfg.MinBackoff
-	}
-	if cfg.StableConnection <= 0 {
-		cfg.StableConnection = 30 * time.Second
-	}
-	return &Client{Config: cfg}
 }
 
 func (c *Client) Run(ctx context.Context, in io.Reader, out io.Writer) error {
