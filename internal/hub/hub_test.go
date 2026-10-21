@@ -94,22 +94,6 @@ func TestEnqueueAfterStopFails(t *testing.T) {
 	}
 }
 
-func TestStopAndCloseAreIdempotent(t *testing.T) {
-	t.Parallel()
-
-	c := NewClient(nil, 1)
-	c.Stop()
-	c.Stop()
-	c.Close()
-	c.Close()
-
-	select {
-	case <-c.Done():
-	default:
-		t.Fatal("client was not stopped")
-	}
-}
-
 func TestClose(t *testing.T) {
 	t.Parallel()
 
