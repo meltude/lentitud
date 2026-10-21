@@ -26,7 +26,7 @@ import (
 
 type Config struct {
 	Addr               string
-	AllowedOrigins     []string
+	AllowedOrigins     map[string]struct{}
 	MaxMessageBytes    int
 	SendBuffer         int
 	JoinTimeout        time.Duration
@@ -71,44 +71,12 @@ func New(cfg Config, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	if cfg.MaxMessageBytes <= 0 {
-		cfg.MaxMessageBytes = protocol.MaxMessageBytes
-	}
-	if cfg.SendBuffer <= 0 {
-		cfg.SendBuffer = 256
-	}
-	if cfg.JoinTimeout <= 0 {
-		cfg.JoinTimeout = 10 * time.Second
-	}
-	if cfg.WriteTimeout <= 0 {
-		cfg.WriteTimeout = 10 * time.Second
-	}
-	if cfg.PingInterval <= 0 {
-		cfg.PingInterval = 30 * time.Second
-	}
-	if cfg.PongWait <= cfg.PingInterval {
-		cfg.PongWait = 2 * cfg.PingInterval
-	}
-	if cfg.RateLimitPerSecond <= 0 {
-		cfg.RateLimitPerSecond = 10
-	}
-	if cfg.ShutdownTimeout <= 0 {
-		cfg.ShutdownTimeout = 5 * time.Second
-	}
-
-	allowed := make(map[string]struct{}, len(cfg.AllowedOrigins))
-	for _, origin := range cfg.AllowedOrigins {
-		origin = strings.TrimSpace(origin)
-		if origin != "" {
-			allowed[origin] = struct{}{}
-		}
-	}
 
 	s := &Server{
 		cfg:     cfg,
 		hub:     hub.New(),
 		log:     logger,
-		allowed: allowed,
+		allowed: cfg.AllowedOrigins,
 		conns:   make(map[*websocket.Conn]struct{}),
 	}
 	s.upgrader = websocket.Upgrader{

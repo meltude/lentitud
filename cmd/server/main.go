@@ -88,7 +88,12 @@ func parseConfig() (server.Config, slog.Level, error) {
 			out = append(out, part)
 		}
 	}
-	cfg.AllowedOrigins = out
+	for _, origin := range out {
+		origin = strings.TrimSpace(origin)
+		if origin != "" {
+			cfg.AllowedOrigins[origin] = struct{}{}
+		}
+	}
 
 	return cfg, parseLevel(*logLevel), nil
 }

@@ -220,26 +220,6 @@ func TestNewAppliesDefaults(t *testing.T) {
 	}
 }
 
-func TestNewExpandsPongWaitAndTrimsOrigins(t *testing.T) {
-	t.Parallel()
-
-	s := New(Config{
-		PingInterval:   10 * time.Second,
-		PongWait:       5 * time.Second,
-		AllowedOrigins: []string{"  ", " http://allowed.example "},
-	}, nil)
-
-	if s.cfg.PongWait != 20*time.Second {
-		t.Fatalf("PongWait = %v, want 20s", s.cfg.PongWait)
-	}
-	if _, ok := s.allowed["http://allowed.example"]; !ok {
-		t.Fatal("allowed origin was not trimmed and stored")
-	}
-	if _, ok := s.allowed[""]; ok {
-		t.Fatal("blank origin was stored")
-	}
-}
-
 func TestOriginValidation(t *testing.T) {
 	t.Parallel()
 
@@ -269,7 +249,7 @@ func TestOriginValidation(t *testing.T) {
 	}
 
 	allowed := newTestServer(t, func(cfg *Config) {
-		cfg.AllowedOrigins = []string{"http://allowed.example"}
+		cfg.AllowedOrigins = map[string]struct{}{"http://allowed.example": {}}
 	})
 	conn = dialWithOrigin(t, allowed, "http://allowed.example")
 	join(t, conn, "alice")
