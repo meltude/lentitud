@@ -40,8 +40,8 @@ There is intentionally no development shell in the flake.
 Go 1.26 or newer is required.
 
 ```bash
-CGO_ENABLED=0 go build ./cmd/server
-CGO_ENABLED=0 go build ./cmd/client
+CGO_ENABLED=0 go build ./cmd/lentitud-server
+CGO_ENABLED=0 go build ./cmd/lentitud-client
 ```
 
 This creates `./server` and `./client`.

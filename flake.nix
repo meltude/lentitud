@@ -1,11 +1,17 @@
 {
   description = "lentitud - a small WebSocket chat client and server";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-parts = {
+      url = "github:hercules-ci/flake-parts";
+      inputs.nixpkgs-lib.follows = "nixpkgs";
+    };
+  };
 
   outputs =
-    { self, nixpkgs }:
-    let
+    inputs@{ flake-parts, ... }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -13,47 +19,60 @@
         "aarch64-darwin"
       ];
 
-      forEachSystem = f: nixpkgs.lib.genAttrs systems (system: f (import nixpkgs { inherit system; }));
-
-      mklentitud =
-        pkgs: name:
-        pkgs.buildGoModule {
-          pname = "lentitud-${name}";
-          version = "0.1.0";
-          src = ./.;
-          subPackages = [ "cmd/${name}" ];
-          vendorHash = "sha256-0Qxw+MUYVgzgWB8vi3HBYtVXSq/btfh4ZfV/m1chNrA=";
-          doCheck = true;
-          ldflags = [
-            "-s"
-            "-w"
-          ];
-
-          meta = {
-            description = "lentitud WebSocket ${name}";
-            mainProgram = name;
-            platforms = nixpkgs.lib.platforms.unix;
-          };
-        };
-    in
-    {
-      packages = forEachSystem (
-        pkgs:
+      perSystem =
+        { pkgs, lib, ... }:
         let
-          server = mklentitud pkgs "server";
-          client = mklentitud pkgs "client";
+          mklentitud =
+            name:
+            pkgs.buildGoModule {
+              pname = "lentitud-${name}";
+              version = "0.0.1";
+              src = ./.;
+              subPackages = [ "cmd/lentitud-${name}" ];
+              vendorHash = "sha256-0Qxw+MUYVgzgWB8vi3HBYtVXSq/btfh4ZfV/m1chNrA=";
+              ldflags = [
+                "-s"
+                "-w"
+              ];
+
+              meta = {
+                description = "lentitud WebSocket ${name}";
+                mainProgram = "lentitud-${name}";
+                platforms = lib.platforms.unix;
+              };
+            };
+
+          server = mklentitud "server";
+          client = mklentitud "client";
         in
         {
-          inherit server client;
+          packages = {
+            inherit server client;
 
-          default = pkgs.symlinkJoin {
-            name = "lentitud";
-            paths = [
-              server
-              client
+            default = pkgs.symlinkJoin {
+              name = "lentitud";
+              paths = [
+                server
+                client
+              ];
+              meta.mainProgram = "lentitud-client";
+            };
+          };
+
+          apps = {
+            server.program = lib.getExe server;
+            client.program = lib.getExe client;
+          };
+
+          devShells.default = pkgs.mkShell {
+            packages = with pkgs; [
+              go
+              gopls
+              gotools
             ];
           };
-        }
-      );
+
+          formatter = pkgs.nixfmt;
+        };
     };
 }
