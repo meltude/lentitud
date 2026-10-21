@@ -19,7 +19,7 @@ func main() {
 	}
 
 	c := client.New(cfg)
-	go c.HandleShutdown()
+	c.HandleShutdown()
 	if err := c.Run(context.Background(), os.Stdin, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "client failed:", err)
 		os.Exit(1)
