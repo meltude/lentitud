@@ -190,8 +190,7 @@ func TestReconnectsAfterServerRestart(t *testing.T) {
 	cfg.MaxBackoff = 100 * time.Millisecond
 	cfg.StableConnection = time.Millisecond
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	lines := startClient(t, cfg, ctx)
 	waitForLine(t, lines, "* connected as alice")
@@ -206,8 +205,8 @@ func TestReconnectsAfterServerRestart(t *testing.T) {
 		t.Fatal("first server did not stop")
 	}
 
-	ctxB, cancelB := context.WithCancel(context.Background())
-	defer cancelB()
+	ctxB := t.Context()
+
 	runB := make(chan error, 1)
 	go func() { runB <- server.New(serverCfg, nil).Run(ctxB) }()
 
