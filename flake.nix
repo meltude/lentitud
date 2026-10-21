@@ -29,7 +29,7 @@
               version = "0.0.1.1";
               src = ./.;
               subPackages = [ "cmd/lentitud-${name}" ];
-              vendorHash = "sha256-0Qxw+MUYVgzgWB8vi3HBYtVXSq/btfh4ZfV/m1chNrA=";
+              vendorHash = null;
               ldflags = [
                 "-s"
                 "-w"
