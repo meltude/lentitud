@@ -1,6 +1,10 @@
-# lentude
+# _lentitud_
 
-A small WebSocket chat with a server and a terminal client, written in Go.
+A small WebSocket chat with a server and a terminal client, written in Go:
+
+![Image](./docs/screenshot.jpg)
+
+The name of this project originally comes from a reference to Chris Christodoulou's track "...con lentitud poderosa" from the Risk of Rain 2 Official Soundtrack (OST).
 
 ## Features
 
@@ -147,3 +151,5 @@ gofmt -l .
 ```
 
 The integration tests start a real HTTP server and connect over WebSocket.
+
+###' Thanks for people who coutributed there
