@@ -26,7 +26,7 @@
             name:
             pkgs.buildGoModule {
               pname = "lentitud-${name}";
-              version = "0.0.1";
+              version = "0.0.1.1";
               src = ./.;
               subPackages = [ "cmd/lentitud-${name}" ];
               vendorHash = "sha256-0Qxw+MUYVgzgWB8vi3HBYtVXSq/btfh4ZfV/m1chNrA=";

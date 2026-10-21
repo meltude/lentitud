@@ -152,4 +152,4 @@ gofmt -l .
 
 The integration tests start a real HTTP server and connect over WebSocket.
 
-###' Thanks for people who coutributed there
+### Thanks for people who coutributed there
