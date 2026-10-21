@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -50,14 +49,6 @@ type Client struct {
 	Connection *websocket.Conn
 }
 
-type RejectedError struct {
-	Reason string
-}
-
-func (e *RejectedError) Error() string {
-	return "rejected by the server: " + e.Reason
-}
-
 func New(cfg *Config) *Client {
 	return &Client{
 		Config: cfg,
@@ -94,8 +85,8 @@ func (c *Client) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 		b.resetIfStable(time.Since(started))
 
 		if err != nil {
-			if rejected, ok := errors.AsType[*RejectedError](err); ok {
-				fmt.Fprintf(out, "! %s\n", rejected)
+			if strings.HasPrefix(err.Error(), "rejected") {
+				fmt.Fprint(out, err.Error())
 			} else {
 				fmt.Fprintf(out, "connection error: %v\n", err)
 			}
@@ -227,7 +218,7 @@ func (c *Client) readLoop(conn *websocket.Conn, out io.Writer) error {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
 			if reason != "" {
-				return &RejectedError{Reason: reason}
+				return fmt.Errorf("rejected by the server: %s", reason)
 			}
 			return err
 		}
