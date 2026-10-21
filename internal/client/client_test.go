@@ -229,6 +229,7 @@ func startClient(t *testing.T, cfg Config, ctx context.Context) <-chan string {
 		for scanner.Scan() {
 			lines <- scanner.Text()
 		}
+		scanner.Err()
 	}()
 
 	errCh := make(chan error, 1)
@@ -307,6 +308,7 @@ func TestRunSendsAndPrintsMessages(t *testing.T) {
 		for scanner.Scan() {
 			lines <- scanner.Text()
 		}
+		scanner.Err()
 	}()
 
 	errCh := make(chan error, 1)
