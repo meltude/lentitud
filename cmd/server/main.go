@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -15,11 +14,8 @@ import (
 )
 
 func main() {
-	cfg, level, err := parseConfig(os.Args[1:], os.Getenv)
+	cfg, level, err := parseConfig()
 	if err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return
-		}
 		fmt.Fprintln(os.Stderr, "configuration error:", err)
 		os.Exit(2)
 	}
@@ -36,26 +32,26 @@ func main() {
 	}
 }
 
-func parseConfig(args []string, getenv func(string) string) (server.Config, slog.Level, error) {
+func parseConfig() (server.Config, slog.Level, error) {
 	cfg := server.DefaultConfig()
 
-	if v := getenv("LENTITUD_ADDR"); v != "" {
+	if v := os.Getenv("LENTITUD_ADDR"); v != "" {
 		cfg.Addr = v
 	}
-	if v := getenv("LENTITUD_TLS_CERT"); v != "" {
+	if v := os.Getenv("LENTITUD_TLS_CERT"); v != "" {
 		cfg.TLSCert = v
 	}
-	if v := getenv("LENTITUD_TLS_KEY"); v != "" {
+	if v := os.Getenv("LENTITUD_TLS_KEY"); v != "" {
 		cfg.TLSKey = v
 	}
-	if v := getenv("LENTITUD_WEBHOOK_SECRET"); v != "" {
+	if v := os.Getenv("LENTITUD_WEBHOOK_SECRET"); v != "" {
 		cfg.WebhookSecret = v
 	}
 
-	originsDefault := getenv("LENTITUD_ALLOWED_ORIGINS")
-	logLevelDefault := getenv("LENTITUD_LOG_LEVEL")
+	originsDefault := os.Getenv("LENTITUD_ALLOWED_ORIGINS")
+	logLevelDefault := os.Getenv("LENTITUD_LOG_LEVEL")
 
-	fs := flag.NewFlagSet("server", flag.ContinueOnError)
+	fs := flag.NewFlagSet("server", flag.ExitOnError)
 	origins := fs.String("allowed-origins", originsDefault, "comma-separated list of additional allowed origins")
 	addr := fs.String("addr", cfg.Addr, "HTTP listen address")
 	maxMessageBytes := fs.Int("max-message-bytes", cfg.MaxMessageBytes, "maximum message size in bytes")
@@ -68,7 +64,7 @@ func parseConfig(args []string, getenv func(string) string) (server.Config, slog
 	webhookSecret := fs.String("webhook-secret", cfg.WebhookSecret, "shared secret for POST /webhook; empty disables the endpoint")
 	logLevel := fs.String("log-level", logLevelDefault, "log level: debug, info, warn, error")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(os.Args[1:]); err != nil {
 		return cfg, 0, err
 	}
 
@@ -81,23 +77,20 @@ func parseConfig(args []string, getenv func(string) string) (server.Config, slog
 	cfg.TLSCert = *tlsCert
 	cfg.TLSKey = *tlsKey
 	cfg.WebhookSecret = *webhookSecret
-	cfg.AllowedOrigins = splitList(*origins)
 
-	return cfg, parseLevel(*logLevel), nil
-}
-
-func splitList(value string) []string {
-	if strings.TrimSpace(value) == "" {
-		return nil
+	if strings.TrimSpace(*origins) == "" {
+		cfg.AllowedOrigins = nil
 	}
-	parts := strings.Split(value, ",")
+	parts := strings.Split(*origins, ",")
 	out := make([]string, 0, len(parts))
 	for _, part := range parts {
 		if part = strings.TrimSpace(part); part != "" {
 			out = append(out, part)
 		}
 	}
-	return out
+	cfg.AllowedOrigins = out
+
+	return cfg, parseLevel(*logLevel), nil
 }
 
 func parseLevel(value string) slog.Level {
