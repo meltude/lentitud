@@ -3,7 +3,6 @@ package protocol
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -38,10 +37,6 @@ func New(t Type, nick, text string) Envelope {
 		Text: text,
 		Time: time.Now().UTC().Format(time.RFC3339),
 	}
-}
-
-func NickKey(nick string) string {
-	return strings.ToLower(nick)
 }
 
 func ValidateNick(nick string) error {

@@ -88,11 +88,3 @@ func TestEnvelopeRoundTrip(t *testing.T) {
 		t.Fatalf("round trip mismatch: got %#v, want %#v", got, env)
 	}
 }
-
-func TestNickKey(t *testing.T) {
-	t.Parallel()
-
-	if got, want := NickKey("Alice"), "alice"; got != want {
-		t.Fatalf("NickKey() = %q, want %q", got, want)
-	}
-}

@@ -2,10 +2,9 @@ package hub
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"time"
-
-	"codeberg.org/Dehydration/lentitud/internal/protocol"
 
 	"github.com/gorilla/websocket"
 )
@@ -95,7 +94,7 @@ func New() *Hub {
 }
 
 func (h *Hub) Add(c *Client, nick string) error {
-	key := protocol.NickKey(nick)
+	key := strings.ToLower(nick)
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -114,7 +113,7 @@ func (h *Hub) Remove(c *Client) {
 	h.mu.Lock()
 	if _, ok := h.clients[c]; ok {
 		delete(h.clients, c)
-		key := protocol.NickKey(c.nick)
+		key := strings.ToLower(c.nick)
 		if h.nicks[key] == c {
 			delete(h.nicks, key)
 		}
@@ -179,6 +178,6 @@ func (h *Hub) Len() int {
 func (h *Hub) NickRegistered(nick string) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	_, ok := h.nicks[protocol.NickKey(nick)]
+	_, ok := h.nicks[strings.ToLower(nick)]
 	return ok
 }
