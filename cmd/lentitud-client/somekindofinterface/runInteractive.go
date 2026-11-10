@@ -1,4 +1,4 @@
-package SomeKindOfInterface
+package somekindofinterface
 
 import (
 	"context"
