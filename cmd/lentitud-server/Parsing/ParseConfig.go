@@ -9,7 +9,7 @@ import (
 	"codeberg.org/Dehydration/lentitud/internal/server"
 )
 
-func parseConfig() (server.Config, slog.Level, error) {
+func ParseConfig() (server.Config, slog.Level, error) {
 	cfg := server.DefaultConfig()
 
 	if v := os.Getenv("LENTITUD_ADDR"); v != "" {
@@ -40,6 +40,8 @@ func parseConfig() (server.Config, slog.Level, error) {
 	tlsKey := fs.String("tls-key", cfg.TLSKey, "TLS private key file")
 	webhookSecret := fs.String("webhook-secret", cfg.WebhookSecret, "shared secret for POST /webhook; empty disables the endpoint")
 	logLevel := fs.String("log-level", logLevelDefault, "log level: debug, info, warn, error")
+
+	// nah this shit looks hilariuous, thanks to deepseek
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return cfg, 0, err

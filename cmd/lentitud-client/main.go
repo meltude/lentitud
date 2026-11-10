@@ -22,7 +22,7 @@ func main() {
 
 	c := client.New(cfg)
 	if tui && term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) {
-		if err := runInteractive(c); err != nil {
+		if err := SomeKindOfInterafce.runInteractive(c); err != nil {
 			fmt.Fprintln(os.Stderr, "client failed:", err)
 			os.Exit(1)
 		}

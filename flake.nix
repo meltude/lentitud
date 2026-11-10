@@ -7,10 +7,14 @@
       url = "github:hercules-ci/flake-parts";
       inputs.nixpkgs-lib.follows = "nixpkgs";
     };
+    gomod2nix = {
+      url = "github:nix-community/gomod2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    inputs@{ flake-parts, ... }:
+    inputs@{ flake-parts, gomod2nix, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
         "x86_64-linux"
@@ -20,16 +24,24 @@
       ];
 
       perSystem =
-        { pkgs, lib, ... }:
+        {
+          pkgs,
+          lib,
+          system,
+          ...
+        }:
         let
+          gomod2nixPkgs = gomod2nix.legacyPackages.${system};
+
           mklentitud =
             name:
-            pkgs.buildGoModule {
+            gomod2nixPkgs.buildGoApplication {
               pname = "lentitud-${name}";
               version = "0.0.1.1";
               src = ./.;
               subPackages = [ "cmd/lentitud-${name}" ];
-              vendorHash = null;
+              modules = ./gomod2nix.toml;
+
               ldflags = [
                 "-s"
                 "-w"
