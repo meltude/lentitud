@@ -8,13 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"codeberg.org/Dehydration/lentitud/cmd/lentitud-server/Parsing"
 	"codeberg.org/Dehydration/lentitud/internal/server"
 )
 
 func main() {
-	cfg, level, err :=
-		Parsing.ParseConfig()
+	cfg, level, err := server.ParseConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "configuration error:", err)
 		os.Exit(2)

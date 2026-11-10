@@ -1,4 +1,4 @@
-package somekindofinterface
+package client
 
 import (
 	"context"
@@ -10,11 +10,10 @@ import (
 	"strings"
 	"syscall"
 
-	"codeberg.org/Dehydration/lentitud/internal/client"
 	"github.com/chzyer/readline"
 )
 
-func runInteractive(c *client.Client) error {
+func RunInteractive(c *Client) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 

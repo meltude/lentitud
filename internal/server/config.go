@@ -1,16 +1,14 @@
-package Parsing
+package server
 
 import (
 	"flag"
 	"log/slog"
 	"os"
 	"strings"
-
-	"codeberg.org/Dehydration/lentitud/internal/server"
 )
 
-func ParseConfig() (server.Config, slog.Level, error) {
-	cfg := server.DefaultConfig()
+func ParseConfig() (Config, slog.Level, error) {
+	cfg := DefaultConfig()
 
 	if v := os.Getenv("LENTITUD_ADDR"); v != "" {
 		cfg.Addr = v
@@ -40,8 +38,6 @@ func ParseConfig() (server.Config, slog.Level, error) {
 	tlsKey := fs.String("tls-key", cfg.TLSKey, "TLS private key file")
 	webhookSecret := fs.String("webhook-secret", cfg.WebhookSecret, "shared secret for POST /webhook; empty disables the endpoint")
 	logLevel := fs.String("log-level", logLevelDefault, "log level: debug, info, warn, error")
-
-	// nah this shit looks hilariuous, thanks to deepseek
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return cfg, 0, err
@@ -75,4 +71,17 @@ func ParseConfig() (server.Config, slog.Level, error) {
 	}
 
 	return cfg, parseLevel(*logLevel), nil
+}
+
+func parseLevel(value string) slog.Level {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
