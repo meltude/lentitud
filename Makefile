@@ -7,7 +7,7 @@ GOFLAGS += -trimpath
 
 all: build
 
-build: $(BIN)/lentitud-server $(BIN)/lentitud-client
+build: $(BIN)/lentitud-server
 
 $(BIN)/%: FORCE
 	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $@ ./cmd/$*
@@ -23,4 +23,3 @@ clean:
 install: build
 	install -d $(DESTDIR)/usr/local/bin
 	install -m 755 $(BIN)/lentitud-server $(DESTDIR)/usr/local/bin/lentitud-server
-	install -m 755 $(BIN)/lentitud-client $(DESTDIR)/usr/local/bin/lentitud-client

@@ -1,6 +1,6 @@
 # _lentitud_
 
-A small WebSocket chat with a server and a terminal client, written in Go:
+A small WebSocket chat server, written in Go:
 
 ![Image](./docs/screenshot.jpg)
 
@@ -10,10 +10,9 @@ The name of this project originally comes from a reference to Chris Christodoulo
 
 - Broadcast chat over WebSocket.
 - JSON protocol with server-assigned nicknames and timestamps.
-- Case-insensitive unique nicknames.
+- Unique exact-match nicknames, released when a user disconnects.
 - Ping/pong keepalive, read limits, rate limiting, and slow-client eviction.
 - Origin allowlist and optional TLS.
-- Client reconnects with exponential backoff.
 - Graceful server shutdown.
 
 ## Build with Nix
@@ -23,18 +22,16 @@ git add .
 nix build
 ```
 
-The default package contains both binaries:
+The result contains the server binary:
 
 ```bash
 ./result/bin/lentitud-server
-./result/bin/lentitud-client -nick alice
 ```
 
 Build a single program:
 
 ```bash
 nix build github:meltude/lentitud#server
-nix build github:meltude/lentitud#client
 ```
 
 Developer shell:
@@ -49,10 +46,9 @@ Go 1.26 or newer is required.
 
 ```bash
 CGO_ENABLED=0 go build ./cmd/lentitud-server
-CGO_ENABLED=0 go build ./cmd/lentitud-client
 ```
 
-This creates `./server` and `./client`.
+This creates `./server`.
 
 ## Run
 
@@ -64,21 +60,17 @@ Start the server:
 ./server -addr :9000
 ```
 
-Start one or more clients:
+Environment variables are also supported. Every flag has a matching variable
+with the `LENTITUD_` prefix: `LENTITUD_ADDR`, `LENTITUD_ALLOWED_ORIGINS`,
+`LENTITUD_TLS_CERT`, `LENTITUD_TLS_KEY`, `LENTITUD_WEBHOOK_SECRET`,
+`LENTITUD_MAX_USERS`, and `LENTITUD_LOG_LEVEL`. Command-line flags take
+precedence over the environment.
 
 ```bash
-./client -nick alice
-./client -nick bob -server ws://localhost:8080/ws
+LENTITUD_ADDR=:9000 ./server
 ```
 
-Environment variables are also supported:
-
-```bash
-NKIT_SERVER=wss://chat.example/ws NKIT_NICK=alice ./client
-NKIT_ADDR=:9000 ./server
-```
-
-Press Ctrl-C to exit. Type a line and press Enter to send a message.
+Press Ctrl-C to exit.
 
 ## Server flags
 
@@ -91,8 +83,10 @@ Press Ctrl-C to exit. Type a line and press Enter to send a message.
 | `-ping-interval`     | `30s`   | WebSocket ping interval                                         |
 | `-pong-wait`         | `60s`   | Time to wait for a pong                                         |
 | `-rate-limit`        | `10`    | Maximum messages per second per client                          |
+| `-max-users`         | `20`    | Maximum number of connected users                               |
 | `-tls-cert`          | empty   | TLS certificate file                                            |
 | `-tls-key`           | empty   | TLS private key file                                            |
+| `-webhook-secret`    | empty   | Shared secret for `POST /webhook`; empty disables the endpoint  |
 | `-log-level`         | `info`  | `debug`, `info`, `warn`, or `error`                             |
 
 Requests with no `Origin` header, such as native clients, are allowed. Browser
@@ -104,21 +98,6 @@ Examples:
 ./server -addr :8080 -allowed-origins https://chat.example
 ./server -addr :8443 -tls-cert cert.pem -tls-key key.pem
 ```
-
-## Client flags
-
-| Flag        | Default                  | Description                       |
-| ----------- | ------------------------ | --------------------------------- |
-| `-server`   | `ws://localhost:8080/ws` | Server URL (`ws://` or `wss://`)  |
-| `-nick`     | empty                    | Nickname, required                |
-| `-insecure` | `false`                  | Skip TLS certificate verification |
-
-Nicknames are 1-32 bytes and may contain letters, digits, `_`, and `-`.
-Nicknames are unique without regard to case.
-
-If the connection drops, the client reconnects automatically. A reconnecting
-client may need to wait for the old server-side connection to time out before
-the nickname becomes available again.
 
 ## Protocol
 
@@ -146,14 +125,4 @@ the authenticated connection nickname, so one client cannot impersonate another.
   end-to-end encryption.
 - Do not expose the plain `ws://` server directly to the public internet.
 
-## Development
-
-```bash
-CGO_ENABLED=0 go test -race ./...
-go vet ./...
-gofmt -l .
-```
-
-The integration tests start a real HTTP server and connect over WebSocket.
-
-### Thanks for people who coutributed there
+### Thanks for people who contributed there

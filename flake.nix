@@ -1,5 +1,5 @@
 {
-  description = "lentitud - a small WebSocket chat client and server";
+  description = "lentitud - a small WebSocket chat server";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -55,25 +55,16 @@
             };
 
           server = mklentitud "server";
-          client = mklentitud "client";
         in
         {
           packages = {
-            inherit server client;
+            inherit server;
 
-            default = pkgs.symlinkJoin {
-              name = "lentitud";
-              paths = [
-                server
-                client
-              ];
-              meta.mainProgram = "lentitud-client";
-            };
+            default = server;
           };
 
           apps = {
             server.program = lib.getExe server;
-            client.program = lib.getExe client;
           };
 
           devShells.default = pkgs.mkShell {

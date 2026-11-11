@@ -4,73 +4,79 @@ import (
 	"flag"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func ParseConfig() (Config, slog.Level, error) {
 	cfg := DefaultConfig()
+	applyEnv(&cfg)
 
-	if v := os.Getenv("LENTITUD_ADDR"); v != "" {
-		cfg.Addr = v
-	}
-	if v := os.Getenv("LENTITUD_TLS_CERT"); v != "" {
-		cfg.TLSCert = v
-	}
-	if v := os.Getenv("LENTITUD_TLS_KEY"); v != "" {
-		cfg.TLSKey = v
-	}
-	if v := os.Getenv("LENTITUD_WEBHOOK_SECRET"); v != "" {
-		cfg.WebhookSecret = v
-	}
-
-	originsDefault := os.Getenv("LENTITUD_ALLOWED_ORIGINS")
-	logLevelDefault := os.Getenv("LENTITUD_LOG_LEVEL")
+	origins := os.Getenv("LENTITUD_ALLOWED_ORIGINS")
+	logLevel := os.Getenv("LENTITUD_LOG_LEVEL")
 
 	fs := flag.NewFlagSet("server", flag.ExitOnError)
-	origins := fs.String("allowed-origins", originsDefault, "comma-separated list of additional allowed origins")
-	addr := fs.String("addr", cfg.Addr, "HTTP listen address")
-	maxMessageBytes := fs.Int("max-message-bytes", cfg.MaxMessageBytes, "maximum message size in bytes")
-	joinTimeout := fs.Duration("join-timeout", cfg.JoinTimeout, "time allowed to send the join message")
-	pingInterval := fs.Duration("ping-interval", cfg.PingInterval, "WebSocket ping interval")
-	pongWait := fs.Duration("pong-wait", cfg.PongWait, "time to wait for a pong before disconnecting")
-	rateLimit := fs.Int("rate-limit", cfg.RateLimitPerSecond, "maximum messages per second per client")
-	tlsCert := fs.String("tls-cert", cfg.TLSCert, "TLS certificate file")
-	tlsKey := fs.String("tls-key", cfg.TLSKey, "TLS private key file")
-	webhookSecret := fs.String("webhook-secret", cfg.WebhookSecret, "shared secret for POST /webhook; empty disables the endpoint")
-	logLevel := fs.String("log-level", logLevelDefault, "log level: debug, info, warn, error")
+	stringVar := func(dst *string, name, usage string) { fs.StringVar(dst, name, *dst, usage) }
+	intVar := func(dst *int, name, usage string) { fs.IntVar(dst, name, *dst, usage) }
+	durationVar := func(dst *time.Duration, name, usage string) { fs.DurationVar(dst, name, *dst, usage) }
+
+	stringVar(&cfg.Addr, "addr", "HTTP listen address")
+	stringVar(&origins, "allowed-origins", "comma-separated list of additional allowed origins")
+	intVar(&cfg.MaxMessageBytes, "max-message-bytes", "maximum message size in bytes")
+	durationVar(&cfg.JoinTimeout, "join-timeout", "time allowed to send the join message")
+	durationVar(&cfg.PingInterval, "ping-interval", "WebSocket ping interval")
+	durationVar(&cfg.PongWait, "pong-wait", "time to wait for a pong before disconnecting")
+	intVar(&cfg.RateLimitPerSecond, "rate-limit", "maximum messages per second per client")
+	stringVar(&cfg.TLSCert, "tls-cert", "TLS certificate file")
+	stringVar(&cfg.TLSKey, "tls-key", "TLS private key file")
+	stringVar(&cfg.WebhookSecret, "webhook-secret", "shared secret for POST /webhook; empty disables the endpoint")
+	intVar(&cfg.MaxClients, "max-users", "maximum number of connected users")
+	stringVar(&logLevel, "log-level", "log level: debug, info, warn, error")
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return cfg, 0, err
 	}
 
-	cfg.Addr = *addr
-	cfg.MaxMessageBytes = *maxMessageBytes
-	cfg.JoinTimeout = *joinTimeout
-	cfg.PingInterval = *pingInterval
-	cfg.PongWait = *pongWait
-	cfg.RateLimitPerSecond = *rateLimit
-	cfg.TLSCert = *tlsCert
-	cfg.TLSKey = *tlsKey
-	cfg.WebhookSecret = *webhookSecret
-
-	if strings.TrimSpace(*origins) == "" {
-		cfg.AllowedOrigins = nil
-	}
-	parts := strings.Split(*origins, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part = strings.TrimSpace(part); part != "" {
-			out = append(out, part)
-		}
-	}
-	for _, origin := range out {
-		origin = strings.TrimSpace(origin)
-		if origin != "" {
-			cfg.AllowedOrigins[origin] = struct{}{}
+	if origins = strings.TrimSpace(origins); origins != "" {
+		cfg.AllowedOrigins = make(map[string]struct{})
+		for _, part := range strings.Split(origins, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				cfg.AllowedOrigins[part] = struct{}{}
+			}
 		}
 	}
 
-	return cfg, parseLevel(*logLevel), nil
+	return cfg, parseLevel(logLevel), nil
+}
+
+func applyEnv(cfg *Config) {
+	for _, env := range []struct {
+		name string
+		dst  *string
+	}{
+		{"LENTITUD_ADDR", &cfg.Addr},
+		{"LENTITUD_TLS_CERT", &cfg.TLSCert},
+		{"LENTITUD_TLS_KEY", &cfg.TLSKey},
+		{"LENTITUD_WEBHOOK_SECRET", &cfg.WebhookSecret},
+	} {
+		if v := os.Getenv(env.name); v != "" {
+			*env.dst = v
+		}
+	}
+
+	for _, env := range []struct {
+		name string
+		dst  *int
+	}{
+		{"LENTITUD_MAX_USERS", &cfg.MaxClients},
+	} {
+		if v := os.Getenv(env.name); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				*env.dst = n
+			}
+		}
+	}
 }
 
 func parseLevel(value string) slog.Level {

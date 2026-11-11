@@ -2,13 +2,10 @@ package hub
 
 import (
 	"errors"
-	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
 )
-
-const defaultSendBuffer = 256
 
 type Client struct {
 	Conn *websocket.Conn
@@ -21,9 +18,6 @@ type Client struct {
 }
 
 func NewClient(conn *websocket.Conn, sendBuffer int) *Client {
-	if sendBuffer <= 0 {
-		sendBuffer = defaultSendBuffer
-	}
 	return &Client{
 		Conn: conn,
 		send: make(chan []byte, sendBuffer),
@@ -83,24 +77,29 @@ func New() *Hub {
 }
 
 func (h *Hub) Add(c *Client, nick string) error {
-	key := strings.ToLower(nick)
-
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if _, exists := h.clients[key]; exists {
+	if _, exists := h.clients[nick]; exists {
 		return errors.New("nickname already in use")
 	}
 
 	c.Nick = nick
-	h.clients[key] = c
+	h.clients[nick] = c
 	return nil
 }
 
 func (h *Hub) Remove(nick string) {
 	h.mu.Lock()
-	delete(h.clients, strings.ToLower(nick))
+	delete(h.clients, nick)
 	h.mu.Unlock()
+}
+
+// Len returns the number of connected clients.
+func (h *Hub) Len() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients)
 }
 
 func (h *Hub) Broadcast(sender *Client, msg []byte) {

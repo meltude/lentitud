@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -39,15 +40,17 @@ func New(t Type, nick, text string) Envelope {
 
 func ValidateNick(nick string) error {
 	if len(nick) == 0 || len(nick) > MaxNickBytes {
-		return errors.New("invalid nickname")
+		return errors.New("nickname must be between 1 and 32 bytes")
+	}
+	for _, r := range nick {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' {
+			return errors.New("nickname may only contain letters, digits, '_' and '-'")
+		}
 	}
 	return nil
 }
 
 func ValidateText(text string, maxBytes int) error {
-	if maxBytes <= 0 {
-		maxBytes = MaxMessageBytes
-	}
 	if len(text) == 0 || len(text) > maxBytes || strings.ContainsAny(text, "\r\n") {
 		return errors.New("invalid message")
 	}
