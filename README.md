@@ -101,7 +101,9 @@ Examples:
 
 ## Protocol
 
-Messages are JSON objects with a `type` field:
+Messages are JSON objects with a `type` field. See
+[docs/protocol.md](./docs/protocol.md) for a detailed client-facing
+description.
 
 | Type      | Direction        | Fields                 |
 | --------- | ---------------- | ---------------------- |
