@@ -18,6 +18,14 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	select {
+	case s.clientSlots <- struct{}{}:
+		defer func() { <-s.clientSlots }()
+	default:
+		http.Error(w, "server full", http.StatusServiceUnavailable)
+		return
+	}
+
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.log.Warn("websocket upgrade failed", "error", err, "remote", r.RemoteAddr)
@@ -54,12 +62,8 @@ func (s *Server) serve(conn *websocket.Conn, remote string) {
 		s.fail(conn, "invalid nickname: "+err.Error())
 		return
 	}
-	if s.hub.Len() >= s.cfg.MaxClients {
-		s.fail(conn, "server full")
-		return
-	}
 	if err := s.hub.Add(c, join.Nick); err != nil {
-		s.fail(conn, "nickname already in use")
+		s.fail(conn, err.Error())
 		return
 	}
 
@@ -70,7 +74,7 @@ func (s *Server) serve(conn *websocket.Conn, remote string) {
 	}()
 
 	defer func() {
-		s.hub.Remove(c.Nick)
+		s.hub.Remove(c)
 		c.Stop()
 		select {
 		case <-writerDone:
@@ -105,6 +109,10 @@ func (s *Server) serve(conn *websocket.Conn, remote string) {
 			}
 			return
 		}
+		if !limiter.allow(time.Now(), s.cfg.RateLimitPerSecond) {
+			s.sendError(c, "rate limit exceeded")
+			return
+		}
 		if mt != websocket.TextMessage {
 			s.sendError(c, "expected a text message")
 			continue
@@ -118,10 +126,6 @@ func (s *Server) serve(conn *websocket.Conn, remote string) {
 
 		switch env.Type {
 		case protocol.TypeMessage:
-			if !limiter.allow(time.Now(), s.cfg.RateLimitPerSecond) {
-				s.sendError(c, "rate limit exceeded")
-				continue
-			}
 			if err := protocol.ValidateText(env.Text, s.cfg.MaxMessageBytes); err != nil {
 				s.sendError(c, err.Error())
 				continue

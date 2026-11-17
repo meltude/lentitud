@@ -65,7 +65,7 @@ There are exactly **two** valid message types a client may send:
 - `text` must be non-empty, at most 4096 bytes (`-max-message-bytes`), and
   must not contain `\r` or `\n`.
 - Rate limit: 10 messages per second per connection (`-rate-limit`).
-  Exceeding it returns an `error`: `"rate limit exceeded"`.
+  Exceeding it returns a `"rate limit exceeded"` error and closes the connection.
 
 Sending anything else (including binary frames, invalid JSON, or an unknown
 `type`) returns an `error` message.

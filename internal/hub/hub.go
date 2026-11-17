@@ -68,6 +68,7 @@ func (c *Client) Close() {
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[string]*Client
+	closed  bool
 }
 
 func New() *Hub {
@@ -80,6 +81,9 @@ func (h *Hub) Add(c *Client, nick string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	if h.closed {
+		return errors.New("server is shutting down")
+	}
 	if _, exists := h.clients[nick]; exists {
 		return errors.New("nickname already in use")
 	}
@@ -89,17 +93,12 @@ func (h *Hub) Add(c *Client, nick string) error {
 	return nil
 }
 
-func (h *Hub) Remove(nick string) {
+func (h *Hub) Remove(c *Client) {
 	h.mu.Lock()
-	delete(h.clients, nick)
-	h.mu.Unlock()
-}
-
-// Len returns the number of connected clients.
-func (h *Hub) Len() int {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return len(h.clients)
+	defer h.mu.Unlock()
+	if h.clients[c.Nick] == c {
+		delete(h.clients, c.Nick)
+	}
 }
 
 func (h *Hub) Broadcast(sender *Client, msg []byte) {
@@ -117,7 +116,7 @@ func (h *Hub) Broadcast(sender *Client, msg []byte) {
 	h.mu.RUnlock()
 
 	for _, c := range slow {
-		h.Remove(c.Nick)
+		h.Remove(c)
 		c.Close()
 	}
 }
@@ -125,6 +124,7 @@ func (h *Hub) Broadcast(sender *Client, msg []byte) {
 func (h *Hub) Close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.closed = true
 	for _, c := range h.clients {
 		c.Stop()
 	}

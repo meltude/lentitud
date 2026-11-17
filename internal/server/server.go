@@ -63,11 +63,12 @@ func withDefaults(cfg Config) Config {
 }
 
 type Server struct {
-	cfg      Config
-	hub      *hub.Hub
-	log      *slog.Logger
-	allowed  map[string]struct{}
-	upgrader websocket.Upgrader
+	cfg         Config
+	hub         *hub.Hub
+	log         *slog.Logger
+	allowed     map[string]struct{}
+	upgrader    websocket.Upgrader
+	clientSlots chan struct{}
 
 	shutdown atomic.Bool
 }
@@ -77,11 +78,13 @@ func New(cfg Config, logger *slog.Logger) *Server {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
+	cfg = withDefaults(cfg)
 	s := &Server{
-		cfg:     withDefaults(cfg),
-		hub:     hub.New(),
-		log:     logger,
-		allowed: cfg.AllowedOrigins,
+		cfg:         cfg,
+		hub:         hub.New(),
+		log:         logger,
+		allowed:     cfg.AllowedOrigins,
+		clientSlots: make(chan struct{}, max(0, cfg.MaxClients)),
 	}
 	s.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
@@ -106,11 +109,15 @@ func (s *Server) Run(ctx context.Context) error {
 	if (s.cfg.TLSCert == "") != (s.cfg.TLSKey == "") {
 		return errors.New("both TLS certificate and key must be set")
 	}
+	if s.cfg.MaxClients < 1 {
+		return errors.New("maximum number of clients must be positive")
+	}
 
 	srv := &http.Server{
 		Addr:              s.cfg.Addr,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
