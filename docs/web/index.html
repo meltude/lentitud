@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Balsamiq+Sans:ital,wght@0,400;0,700;1,400;1,700&family=Short+Stack&display=swap"
+      rel="stylesheet"
+    />
+    <title>lentitud testing server</title>
+    <style>
+      :root {
+        --bg: #000;
+        --fg: #f5f5f5;
+        --muted: #9a9a9a;
+        --panel: #121212;
+        --border: #2a2a2a;
+        --accent: #7ee787;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          "Balsamiq Sans",
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        min-height: 100dvh;
+        padding: 48px 24px 220px;
+      }
+
+      main {
+        width: 100%;
+        max-width: 640px;
+      }
+
+      .eyebrow {
+        margin: 0 0 12px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      h1 {
+        margin: 0 0 20px;
+        font-size: clamp(28px, 6vw, 44px);
+        line-height: 1.15;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0 0 16px;
+        font-size: 17px;
+        line-height: 1.6;
+        color: #d6d6d6;
+        max-width: 56ch;
+      }
+
+      .endpoint {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 20px 0 28px;
+        padding: 16px 18px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow-x: auto;
+      }
+
+      .endpoint code {
+        font-family:
+          "Short Stack", ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+          Consolas, "Liberation Mono", monospace;
+        font-size: clamp(14px, 3.6vw, 17px);
+        color: var(--accent);
+        white-space: nowrap;
+        flex: 1;
+      }
+
+      .copy {
+        flex: none;
+        padding: 7px 12px;
+        font: inherit;
+        font-size: 13px;
+        color: var(--fg);
+        background: #1e1e1e;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        cursor: pointer;
+        transition:
+          background 0.15s ease,
+          border-color 0.15s ease;
+      }
+
+      .copy:hover {
+        background: #2a2a2a;
+      }
+      .copy:active {
+        background: #333;
+      }
+      .copy.done {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      a {
+        color: var(--fg);
+        text-decoration-color: #555;
+        text-underline-offset: 3px;
+      }
+
+      a:hover {
+        text-decoration-color: var(--fg);
+      }
+
+      .note {
+        font-size: 15px;
+        color: var(--muted);
+      }
+
+      .video {
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        width: clamp(180px, 26vw, 380px);
+        height: auto;
+        pointer-events: none;
+        z-index: 10;
+        filter: drop-shadow(0 0 30px rgba(255, 255, 255, 0.06));
+      }
+
+      @media (max-width: 600px) {
+        body {
+          padding: 40px 20px 180px;
+        }
+        .video {
+          width: 150px;
+          opacity: 0.85;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Lentitud - a tiny websocket chat server</h1>
+
+      <p>
+        this is a testing server for lentitud right there, you can connect to it
+        using this below
+      </p>
+
+      <div class="endpoint">
+        <code id="ws-url">wss://lentitud.meltude.me/ws</code>
+        <button class="copy" id="copy-btn" type="button">copy</button>
+      </div>
+
+      <p class="note">
+        for usage look at this:
+        <a
+          href="https://github.com/meltude/lentitud"
+          target="_blank"
+          rel="noopener noreferrer"
+          >github.com/meltude/lentitud</a
+        >
+      </p>
+    </main>
+
+    <video
+      class="video"
+      src="dsh.webm"
+      autoplay
+      loop
+      muted
+      playsinline
+      preload="auto"
+      aria-hidden="true"
+    ></video>
+
+    <script>
+      (function () {
+        var btn = document.getElementById("copy-btn");
+        var url = document.getElementById("ws-url");
+        var timer;
+
+        btn.addEventListener("click", function () {
+          var text = url.textContent.trim();
+          var done = function () {
+            btn.textContent = "copied!";
+            btn.classList.add("done");
+            clearTimeout(timer);
+            timer = setTimeout(function () {
+              btn.textContent = "copy";
+              btn.classList.remove("done");
+            }, 1600);
+          };
+
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, fallback);
+          } else {
+            fallback();
+          }
+
+          function fallback() {
+            var range = document.createRange();
+            range.selectNodeContents(url);
+            var sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            try {
+              document.execCommand("copy");
+              done();
+            } catch (e) {}
+          }
+        });
+
+        // Some browsers only honor autoplay after a muted-property nudge.
+        var video = document.querySelector(".video");
+        if (video) {
+          video.muted = true;
+          var p = video.play();
+          if (p && p.catch) {
+            p.catch(function () {});
+          }
+        }
+      })();
+    </script>
+  </body>
+</html>
